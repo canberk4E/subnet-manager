@@ -1,0 +1,50 @@
+graph
+    subgraph 192.168.1.0/24
+        A_Router[192.168.1.1]
+        A_PC1[192.168.1.2]
+        A_PC2[192.168.1.3]
+        A_PC3[192.168.1.4]
+        A_PC4[192.168.1.5]
+        A_PC5[192.168.1.6]
+        A_Router |<-->7| A_PC1
+        A_Router <-->|2| A_PC2
+        A_Router <-->|10| A_PC4
+        A_PC1 <-->|5| A_PC2
+        A_PC2 <-->|3| A_PC3
+        A_PC4 <-->|9| A_PC2
+        A_PC1 <-->|1| A_PC5
+    end
+    subgraph 10.0.0.0/16
+        B_Router[10.0.0.1]
+        B_PC1[10.0.0.2]
+        B_PC2[10.0.0.3]
+        B_Router <-->|6| B_PC1
+        B_Router <-->|4| B_PC2
+        B_PC1 <-->|7| B_PC2
+    end
+    subgraph 172.16.0.0/24
+        C_Router[172.16.0.1]
+        C_PC1[172.16.0.2]
+        C_PC2[172.16.0.3]
+        C_PC3[172.16.0.4]
+        C_Router <-->|5| C_PC1
+        C_Router <-->|8| C_PC2
+        C_PC1 <-->|2| C_PC2
+        C_PC2 <-->|3| C_PC3
+    end
+    subgraph 192.168.100.0/24
+        D_Router[192.168.100.1]
+        D_PC1[192.168.100.2]
+        D_PC2[192.168.100.3]
+        D_PC3[192.168.100.4]
+        D_PC4[192.168.100.5]
+        D_Router <-->|4| D_PC1
+        D_Router <-->|9| D_PC4
+        D_PC1 <-->|2| D_PC2
+        D_PC2 <-->|3| D_PC3
+        D_PC3 <-->|6| D_PC4
+    end
+    A_Router <--> B_Router
+    B_Router <--> C_Router
+    C_Router <--> D_Router
+    B_Router <--> D_Router
