@@ -2,7 +2,7 @@ package routing;
 
 import java.util.Scanner;
 import java.lang.System;
-
+// this is the main class.
 public class Main {
 
     public static void main(String[] args) {
