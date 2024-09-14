@@ -1,9 +1,13 @@
 package routing;
 
+import java.io.IOException;
 import java.util.Scanner;
-import java.lang.System;
-// this is the main class.
-public class Main {
+
+
+public final class Main {
+    private Main() {
+
+    }
 
     public static void main(String[] args) {
         NetworkManager networkManager = new NetworkManager();
@@ -23,9 +27,9 @@ public class Main {
 
             try {
                 networkManager.processCommand(command);
-            } catch (Exception e) {
-                System.out.println("Error: " + e.getMessage());
-            }
+            } catch (IOException | InterruptedException e) {
+                System.out.println("Error: I/O issue - " + e.getMessage());
+            } // Removed RuntimeException and IllegalArgumentException catch blocks
         }
 
         scanner.close();

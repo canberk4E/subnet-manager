@@ -1,47 +1,181 @@
 package routing;
-
-import java.net.InetAddress;
-import java.net.UnknownHostException;
-import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
+import java.util.HashMap;
+import java.util.ArrayList;
+import java.util.PriorityQueue;
+import java.util.HashSet;
+import java.util.Set;
+import java.util.Comparator;
+import java.util.LinkedList;
 
+/**
+ * This class represents a subnet in the network. It manages network systems (computers and routers),
+ * handles connections between systems, and provides utilities for subnet-specific tasks such as IP
+ * validation and shortest path calculation.
+ */
 public class Subnet {
+    private final String baseAddress; // Base address of the subnet
+    private final int netmask; // Netmask for the subnet
+    private final List<NetworkSystem> networkSystems = new ArrayList<>(); // List of all network systems (computers, routers) in the subnet
+    private final Map<String, Map<String, Integer>> connections = new HashMap<>(); // Store connections between systems and their weights
 
-    private final String baseAddress;
-    private final int netmask;
-    private final List<NetworkSystem> networkSystems = new ArrayList<>();
-
+    /**
+     * Constructor to create a new subnet with the specified base address and netmask.
+     *
+     * @param baseAddress the base IP address of the subnet
+     * @param netmask     the netmask of the subnet
+     */
     public Subnet(String baseAddress, int netmask) {
         this.baseAddress = baseAddress;
         this.netmask = netmask;
     }
 
+    /**
+     * Returns the base IP address of the subnet.
+     *
+     * @return the base address of the subnet
+     */
     public String getBaseAddress() {
         return baseAddress;
     }
 
+    /**
+     * Returns the netmask of the subnet.
+     *
+     * @return the netmask of the subnet
+     */
     public int getNetmask() {
         return netmask;
     }
 
+    /**
+     * Returns the IP range of the subnet in CIDR notation.
+     *
+     * @return the range of the subnet as a string
+     */
     public String getRange() {
         return baseAddress + "/" + netmask;
     }
 
+    /**
+     * Adds a network system (computer or router) to the subnet.
+     *
+     * @param networkSystem the network system to add
+     */
     public void addNetworkSystem(NetworkSystem networkSystem) {
         networkSystems.add(networkSystem);
+        connections.put(networkSystem.ip(), new HashMap<>()); // Initialize empty connections for each system
     }
 
+    /**
+     * Returns the list of network systems within the subnet.
+     * @return a list of network systems
+     */
     public List<NetworkSystem> getNetworkSystems() {
         return networkSystems;
     }
 
+    /**
+     * Adds a connection between two systems within the subnet with a specified weight.
+     * @param system1 the IP address of the first system
+     * @param system2 the IP address of the second system
+     * @param weight  the weight of the connection
+     */
     public void addConnection(String system1, String system2, int weight) {
+        System.out.println("SYSTEM1 : " + system1);
+        System.out.println("SYSTEM2 : " + system2);
+
+        NetworkSystem ns1 = findNetworkSystem(system1);
+        NetworkSystem ns2 = findNetworkSystem(system2);
+
+        if (ns1 == null || ns2 == null) {
+            System.out.println("Error: One or both systems not found.");
+            return;
+        }
+
+        // Check if the connection already exists
+        if (connections.containsKey(system1) && connections.get(system1).containsKey(system2)) {
+            System.out.println("Error: The systems are already connected. Connection: " + system1 + " <--> " + system2);
+            printAllConnections();  // Print all connections (debug)
+            return;  // Exit the method without adding the connection
+        }
+
+        // Intra-subnet connection: requires weight
+        if (weight == 0) {
+            System.out.println("Error: Intra-subnet connections require a weight.");
+            return;
+        }
+
+        // Add the connection with the weight between the systems
+        connections.computeIfAbsent(system1, k -> new HashMap<>()).put(system2, weight);
+        connections.computeIfAbsent(system2, k -> new HashMap<>()).put(system1, weight);
+        System.out.println("Debug: Added intra-subnet connection: " + system1 + " <-->|" + weight + "| " + system2);
+
+        printAllConnections();  // Print all connections after adding (debug)
+    }
+    /**
+     * Removes a connection between two systems within the subnet.
+     * @param system1 the IP address of the first system
+     * @param system2 the IP address of the second system
+     */
+    public void removeConnection(String system1, String system2) {
+        System.out.println("Attempting to remove connection between " + system1 + " and " + system2);
+
+        // Check if both systems exist in the connections map
+        if (connections.containsKey(system1) && connections.get(system1).containsKey(system2)) {
+            // Remove the connection
+            connections.get(system1).remove(system2);
+            connections.get(system2).remove(system1);
+
+            // Clean up any empty maps
+            if (connections.get(system1).isEmpty()) {
+                connections.remove(system1);
+            }
+            if (connections.get(system2).isEmpty()) {
+                connections.remove(system2);
+            }
+
+            System.out.println("Connection between " + system1 + " and " + system2 + " removed.");
+        } else {
+            System.out.println("Error: No connection exists between " + system1 + " and " + system2 + ".");
+        }
+
+        printAllConnections();  // Print all connections for debugging
+    }
+    /**
+     * Removes a computer from the subnet.
+     * @param ip the IP address of the computer to remove
+     * @return true if the computer was removed, false if the system is a router or not found
+     */
+    public boolean removeComputer(String ip) {
+        // Find the system to remove
+        NetworkSystem systemToRemove = findNetworkSystem(ip);
+        if (systemToRemove.isRouter()) {
+            return false;
+        }
+
+        // Remove the system from the network systems list
+        networkSystems.remove(systemToRemove);
+
+        // Remove any connections involving this system
+        connections.remove(ip); // Remove connections where this system is the key
+        for (Map<String, Integer> connectionMap : connections.values()) {
+            connectionMap.remove(ip); // Remove references to this system in other connections
+        }
+
+        System.out.println("Debug: Removed computer and its connections: " + ip);
+        return true;
     }
 
+    /**
+     * Gets the last possible IP address in the subnet (broadcast address).
+     *
+     * @return the last IP address as a string
+     */
     public String getLastIp() {
-        // Convert the base address to a byte array
-        byte[] ipBytes = convertIpToByteArray(baseAddress);
+        // Convert the base address to a byte array using CIDR
+        byte[] ipBytes = CIDR.convertIpToByteArray(baseAddress);
 
         // Calculate the number of host bits (32 - netmask)
         int hostBits = 32 - netmask;
@@ -53,35 +187,152 @@ public class Subnet {
             hostBits -= bitsToSet;
         }
 
-        // Convert the byte array back to a string representation of the IP
-        return convertByteArrayToIp(ipBytes);
+        // Convert the byte array back to a string representation of the IP using CIDR
+        return CIDR.convertByteArrayToIp(ipBytes);
     }
 
-    // Method to convert an IP address string into a byte array
-    private byte[] convertIpToByteArray(String ipAddress) {
-        String[] parts = ipAddress.split("\\.");
-        byte[] byteArray = new byte[4];
+    /**
+     * Checks whether the provided IP address is within the subnet.
+     * @param ip the IP address to check
+     * @return true if the IP is within the subnet, false otherwise
+     */
+    public boolean containsIp(String ip) {
+        System.out.println(ip);
 
-        for (int i = 0; i < 4; i++) {
-            int partAsInt = Integer.parseInt(parts[i]);
-            byteArray[i] = (byte) partAsInt;
+        // Validate IP address format using the CIDR class
+        if (!CIDR.isValidIp(ip) || !CIDR.isValidIp(baseAddress)) {
+            System.out.println("Error: Invalid IP address format.");
+            return false;
         }
 
-        return byteArray;
+        // Convert the base address and the given IP address to byte arrays using CIDR
+        byte[] baseAddressBytes = CIDR.convertIpToByteArray(baseAddress);
+        byte[] ipBytes = CIDR.convertIpToByteArray(ip);
+
+        // Ensure that the byte arrays are of the correct length (IPv4 length should be 4 bytes)
+        if (baseAddressBytes.length != 4 || ipBytes.length != 4) {
+            System.out.println("Error: Invalid IP address length.");
+            return false;
+        }
+
+        // Calculate the network mask based on the subnet's netmask
+        int shift = 32 - netmask;
+        int mask = ~((1 << shift) - 1);
+
+        // Convert byte arrays to integers using CIDR
+        int baseAddressInt = CIDR.byteArrayToInt(baseAddressBytes);
+        int ipInt = CIDR.byteArrayToInt(ipBytes);
+
+        // Check if the given IP is within the subnet's range
+        return (baseAddressInt & mask) == (ipInt & mask);
     }
+    /**
+     * Finds the shortest path between two IP addresses in the subnet.
+     * @param fromIp the source IP address
+     * @param toIp   the destination IP address
+     * @return a list of IP addresses representing the path, or null if no path was found
+     */
+    public List<String> findShortestPath(String fromIp, String toIp) {
+        Map<String, Integer> distances = new HashMap<>();
+        Map<String, String> previousNodes = new HashMap<>();
+        PriorityQueue<String> pq = new PriorityQueue<>(Comparator.comparingInt(distances::get));
+        Set<String> visited = new HashSet<>();
 
-    // Method to convert a byte array back to a string representation of the IP address
-    private String convertByteArrayToIp(byte[] byteArray) {
-        StringBuilder ipAddress = new StringBuilder();
+        for (NetworkSystem system : networkSystems) {
+            distances.put(system.ip(), Integer.MAX_VALUE);
+        }
+        distances.put(fromIp, 0);
+        pq.add(fromIp);
 
-        for (int i = 0; i < byteArray.length; i++) {
-            ipAddress.append(byteArray[i] & 0xFF); // Unsigned byte conversion
-            if (i < byteArray.length - 1) {
-                ipAddress.append(".");
+        while (!pq.isEmpty()) {
+            String current = pq.poll();
+            visited.add(current);
+
+            if (current.equals(toIp)) {
+                break;
+            }
+
+            Map<String, Integer> neighbors = connections.get(current);
+            if (neighbors != null) {
+                for (Map.Entry<String, Integer> neighbor : neighbors.entrySet()) {
+                    if (!visited.contains(neighbor.getKey())) {
+                        int newDist = distances.get(current) + neighbor.getValue();
+                        if (newDist < distances.get(neighbor.getKey())) {
+                            distances.put(neighbor.getKey(), newDist);
+                            previousNodes.put(neighbor.getKey(), current);
+                            pq.add(neighbor.getKey());
+                        }
+                    }
+                }
             }
         }
 
-        return ipAddress.toString();
+        // Reconstruct the shortest path from `fromIp` to `toIp`
+        List<String> path = new LinkedList<>();
+        for (String at = toIp; at != null; at = previousNodes.get(at)) {
+            path.add(0, at);
+        }
+
+        return path.size() == 1 ? null : path;  // Return null if no path was found
+    }
+
+    /**
+     * Returns the router IP for the current subnet.
+     *
+     * @return the router IP address, or null if no router is found
+     */
+    public String getRouterIp() {
+        for (NetworkSystem system : networkSystems) {
+            if (system.isRouter()) {
+                return system.ip();
+            }
+        }
+        return null;  // Return null if no router is found
+    }
+
+
+    /**
+     * Finds an IP address by the network system's name.
+     * @param name the name of the network system
+     * @return the IP address of the system, or null if not found
+     */
+    public String findIpByName(String name) {
+        for (NetworkSystem system : networkSystems) {
+            if (system.ip().contains(name)) {
+                return system.ip();
+            }
+        }
+        return null; // Return null if the device name is not found
+    }
+
+
+    /**
+     * Finds a network system by IP address within the subnet.
+     * @param ip the IP address of the network system
+     * @return the NetworkSystem object if found, or null if not found
+     */
+    public NetworkSystem findNetworkSystem(String ip) {
+        for (NetworkSystem system : networkSystems) {
+            if (system.ip().equals(ip)) {
+                return system;
+            }
+        }
+        return null;
+    }
+    /**
+     * Prints all the connections in the current network for debugging.
+     */
+    public void printAllConnections() {
+        System.out.println("Debug: All connections in the network:");
+        for (Map.Entry<String, Map<String, Integer>> entry : connections.entrySet()) {
+            String system1 = entry.getKey();
+            for (Map.Entry<String, Integer> connection : entry.getValue().entrySet()) {
+                String system2 = connection.getKey();
+                Integer weight = connection.getValue();
+                System.out.println("  " + system1 + " <--> " + system2 + (weight != null ? " | Weight: " + weight : ""));
+            }
+        }
+        System.out.println();  // Add a blank line for readability
     }
 
     @Override

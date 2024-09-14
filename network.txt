@@ -6,7 +6,7 @@ graph
         A_PC3[192.168.1.4]
         A_PC4[192.168.1.5]
         A_PC5[192.168.1.6]
-        A_Router |<-->7| A_PC1
+        A_Router |<-->|7| A_PC1
         A_Router <-->|2| A_PC2
         A_Router <-->|10| A_PC4
         A_PC1 <-->|5| A_PC2

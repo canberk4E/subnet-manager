@@ -1,57 +1,132 @@
 package routing;
 
-import java.net.InetAddress;
-import java.net.UnknownHostException;
-import java.util.*;
-import java.lang.System;
-import java.io.*;
+import java.io.BufferedReader;
+import java.io.FileReader;
+import java.io.IOException;
+import java.util.ArrayList;
+import java.util.Comparator;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
 
 public class NetworkManager {
     private final Map<String, Subnet> subnets = new HashMap<>();
+    private final Map<String, String> deviceNameToIpMap = new HashMap<>();
+    private final Map<String, Map<String, Integer>> interSubnetConnections = new HashMap<>();
 
-    public void processCommand(String command) throws Exception {
+    // Use an instance of ConnectionManager for managing connections
+    private final ConnectionManager connectionManager;
+
+    public NetworkManager() {
+        this.connectionManager = new ConnectionManager(subnets, interSubnetConnections);
+    }
+
+    public void processCommand(String command) throws IOException, InterruptedException {
         String[] parts = command.split("\\s+");
+        if (parts.length == 0 || parts[0].isEmpty()) {
+            //it prints itself out?  System.out.println("Error, Empty command. Please try again.");
+            return;
+        }
 
         switch (parts[0]) {
             case "load":
-                if (parts[1].equals("network")) {
-                    loadNetwork(parts[2]);
-                } else {
-                    throw new Exception("Invalid load command");
-                }
+                handleLoadCommand(parts);
                 break;
-
             case "list":
-                switch (parts[1]) {
-                    case "subnets" -> listSubnets();
-                    case "range" -> listRange(parts[2]);
-                    case "systems" -> listSystems(parts[2]);
-                    default -> throw new Exception("Invalid list command");
-                }
+                handleListCommand(parts);
                 break;
-
             case "add":
-                if (parts[1].equals("computer")) {
-                    addComputer(parts[2], parts[3]);
-                } else if (parts[1].equals("connection")) {
-                    addConnection(parts[2], parts[3], Integer.parseInt(parts[4]));
-                } else {
-                    throw new Exception("Invalid add command");
-                }
+                handleAddCommand(parts);
                 break;
-
             case "send":
-                if (parts[1].equals("packet")) {
-                    sendPacket(parts[2], parts[3]);
-                } else {
-                    throw new Exception("Invalid send command");
-                }
+                handleSendCommand(parts);
                 break;
-
+            case "remove":
+                handleRemoveCommand(parts);
+                break;
             default:
-                throw new Exception("Unknown command");
+                System.out.println("Error, Unknown command '" + parts[0] + "'. Please try again.");
+                break;
         }
     }
+
+    private void handleLoadCommand(String[] parts) throws IOException {
+        if (parts.length < 3 || !parts[1].equals("network")) {
+            System.out.println("Error, Invalid 'load' command format. Expected 'load network <file_path>'.");
+        } else {
+            loadNetwork(parts[2]);
+        }
+    }
+
+    private void handleListCommand(String[] parts) {
+        if (parts.length < 2) {
+            System.out.println("Error, Missing argument for 'list' command.");
+            return;
+        }
+        switch (parts[1]) {
+            case "subnets" -> listSubnets();
+            case "range" -> {
+                if (parts.length < 3) {
+                    System.out.println("Error, Missing subnet argument for 'list range'. Expected 'list range <subnet>'.");
+                } else {
+                    listRange(parts[2]);
+                }
+            }
+            case "systems" -> {
+                if (parts.length < 3) {
+                    System.out.println("Error, Missing subnet argument for 'list systems'. Expected 'list systems <subnet>'.");
+                } else {
+                    listSystems(parts[2]);
+                }
+            }
+            default -> System.out.println("Error, Invalid 'list' command. Expected 'subnets', 'range', or 'systems'.");
+        }
+    }
+
+    private void handleAddCommand(String[] parts) {
+        if (parts.length < 4 || (!parts[1].equals("computer") && !parts[1].equals("connection"))) {
+            System.out.println("Error, Invalid 'add' command format.");
+            return;
+        }
+
+        if (parts[1].equals("computer")) {
+            String subnetAddress = parts[2].split("/")[0];
+            addComputer(subnetAddress, parts[3]);
+        } else {
+            if (parts.length == 5) {
+                connectionManager.addConnection(parts[2], parts[3], Integer.parseInt(parts[4]));
+            } else if (parts.length == 4) {
+                connectionManager.addConnection(parts[2], parts[3], 0);
+            } else {
+                System.out.println("Error, Invalid 'add connection' command format. Expected 'add connection <ip1> <ip2> <weight>'.");
+            }
+        }
+    }
+
+    private void handleSendCommand(String[] parts) {
+        if (parts.length < 4 || !parts[1].equals("packet")) {
+            System.out.println("Error, Invalid 'send packet' command format. Expected 'send packet <from_ip> <to_ip>'.");
+        } else {
+            connectionManager.sendPacket(parts[2], parts[3]);
+        }
+    }
+
+    private void handleRemoveCommand(String[] parts) {
+        if (parts.length < 4) {
+            System.out.println("Error, Invalid remove command format.");
+            return;
+        }
+
+        if (parts[1].equals("connection")) {
+            connectionManager.removeConnection(parts[2], parts[3]);
+        } else if (parts[1].equals("computer")) {
+            String subnetAddress = parts[2].split("/")[0];
+            removeComputer(subnetAddress, parts[3]);
+        } else {
+            System.out.println("Error, Invalid remove command. Expected 'connection' or 'computer'.");
+        }
+    }
+
 
     private void listSubnets() {
         List<Map.Entry<String, Subnet>> subnetList = new ArrayList<>(subnets.entrySet());
@@ -63,7 +138,7 @@ public class NetworkManager {
         System.out.println();
     }
 
-    private void listRange(String subnet) throws UnknownHostException {
+    private void listRange(String subnet) throws IllegalArgumentException {
         String[] parts = subnet.split("/");
         String firstIp = parts[0];
         Subnet sn = subnets.get(firstIp);
@@ -103,66 +178,49 @@ public class NetworkManager {
         }
     }
 
-    private void addConnection(String ip1, String ip2, int weight) {
-        // Placeholder for adding a connection between two systems.
-        System.out.println("Connection added between " + ip1 + " and " + ip2 + " with weight " + weight);
+    private void removeComputer(String subnetAddress, String ipAddress) {
+        System.out.println("Trying to remove computer from subnet: " + subnetAddress);
+        Subnet targetSubnet = subnets.get(subnetAddress.trim());
+        if (targetSubnet != null) {
+            boolean removed = targetSubnet.removeComputer(ipAddress);
+            if (removed) {
+                System.out.println("Computer " + ipAddress + " removed from subnet " + subnetAddress.trim());
+            } else {
+                System.out.println("Computer " + ipAddress + " not found in subnet " + subnetAddress.trim());
+            }
+        } else {
+            System.out.println("Subnet " + subnetAddress + " not found.");
+            System.out.println("Available subnets: " + subnets.keySet());  // Print available subnets for debugging
+        }
     }
 
-    private void sendPacket(String fromIp, String toIp) {
-        // Placeholder for sending a packet from one system to another.
-        System.out.println("Packet sent from " + fromIp + " to " + toIp);
-    }
-
-    // Method to load the network from a file
+    // Method to load the network from a file (remains unchanged)
     public void loadNetwork(String path) throws IOException {
         BufferedReader reader = new BufferedReader(new FileReader(path));
         String line;
         Subnet currentSubnet = null;
-
+        List<String> connectionBuffer = new ArrayList<>();  // Buffer to store connections to be processed later
+        System.out.println("graph");
         while ((line = reader.readLine()) != null) {
             line = line.trim(); // Remove leading and trailing whitespace
-
             // Check if we're starting a new subnet (subgraph)
             if (line.startsWith("subgraph")) {
-                // Extract the subnet address and netmask from CIDR notation
                 String[] parts = line.split("\\s+");
                 String cidr = parts[1];
                 String[] cidrParts = cidr.split("/"); // Split the CIDR notation into base address and netmask
                 String baseAddress = cidrParts[0];
                 int netmask = Integer.parseInt(cidrParts[1]);
-
                 currentSubnet = new Subnet(baseAddress, netmask); // Create a new Subnet object
                 subnets.put(baseAddress, currentSubnet); // Add to the list of subnets
-                System.out.println("Created subnet: " + baseAddress + "/" + netmask);
-
-                // Check for the end of a subnet definition
+                System.out.println("subgraph " + baseAddress + "/" + netmask); // Output the start of a subnet
             } else if (line.equals("end")) {
+                System.out.println("end");  // End of a subnet
                 currentSubnet = null; // We're done with this subnet
 
-                // Process connections inside the subnet (with weights) or between subnets (without weights)
             } else if (line.contains("<-->")) {
-                if (currentSubnet != null) {
-                    // Intra-subnet connection (with weight)
-                    String[] parts = line.split("\\|");
-                    String connectionPart = parts[0].trim();
-                    String system1 = connectionPart.split("<-->")[0].trim();
-                    String system2 = parts[2].trim();
-                    int weight = Integer.parseInt(parts[1].trim()); // Extract the weight
+                // This is a connection line, so we add it to the buffer
+                connectionBuffer.add(line);
 
-                    // Add connection to the current subnet
-                    currentSubnet.addConnection(system1, system2, weight);
-                    System.out.println("Added connection: " + system1 + " <-->|" + weight + "| " + system2);
-                } else {
-                    // Inter-subnet connection (no weight)
-                    String[] parts = line.split("<-->");
-                    String router1 = parts[0].trim();
-                    String router2 = parts[1].trim();
-
-                    // Handle inter-subnet connection (Router-to-Router)
-                    System.out.println("Added inter-subnet connection between " + router1 + " and " + router2);
-                }
-
-                // Process systems inside the subnet (computers or routers)
             } else if (line.contains("[")) {
                 // Systems are defined like: A_Router[192.168.1.1]
                 String[] parts = line.split("\\[|\\]");
@@ -173,12 +231,98 @@ public class NetworkManager {
                     boolean isRouter = systemName.toLowerCase().contains("router");
                     NetworkSystem networkSystem = new NetworkSystem(ipAddress, isRouter); // Create a NetworkSystem (Computer or Router)
                     currentSubnet.addNetworkSystem(networkSystem); // Add to the current subnet
-                    System.out.println("Added networkSystem: " + systemName + " (" + ipAddress + ")");
+                    // Map the system name to its IP address
+                    deviceNameToIpMap.put(systemName, ipAddress);
+                    System.out.println(systemName + "[" + ipAddress + "]");  // Print the system in the correct format
                 }
             }
         }
 
+        // Process buffered connections after all systems have been loaded
+        for (String connectionLine : connectionBuffer) {
+            processConnection(connectionLine);  // This will now work as the buffer is filled
+        }
+
         reader.close();
+        System.out.println("Existing connections after loading the network:");
+        for (Subnet subnet : subnets.values()) {
+            subnet.printAllConnections(); // Call the method to print connections for each subnet
+        }
+
+        // Now print the inter-subnet connections
+        printInterSubnetConnections();
+
         System.out.println("Network loaded successfully from: " + path);
+    }
+
+    private void processConnection(String line) {
+        // Check if the line contains a connection "<-->"
+        if (line.contains("<-->")) {
+            String[] parts = line.split("<-->");  // Split the line into systems at "<-->"
+            if (parts.length == 2) {
+                String system1 = parts[0].trim();
+                String rest = parts[1].trim();  // Contains either system2 and weight, or just system2
+
+                // Check if the system names can be resolved to IPs
+                String ip1 = deviceNameToIpMap.get(system1);
+                if (ip1 == null) {
+                    System.out.println("Error, Device " + system1 + " not found in map.");
+                    return;
+                }
+                // Check if the rest contains a weight (intra-subnet connection)
+                if (rest.contains("|")) {
+                    String[] weightParts = rest.split("\\|");  // Split the system2 and weight by "|"
+                    // Ensure the weight and system2 are correctly split
+                    if (weightParts.length == 3) {
+                        String system2 = weightParts[2].trim();
+                        String ip2 = deviceNameToIpMap.get(system2);  // Resolve system2 to its IP
+
+                        if (ip2 == null) {
+                            System.out.println("Error, Device " + system2 + " not found in map.");
+                            return;
+                        }
+                        try {
+                            int weight = Integer.parseInt(weightParts[1].trim());  // Parse the weight
+                            System.out.println(system1 + " <-->|" + weight + "| " + system2);  // Print the connection with weight
+                            System.out.println("Resolved IPs - system1: " + ip1 + ", system2: " + ip2);
+                            connectionManager.addConnection(ip1, ip2, weight);  // Add the connection with weight
+                        } catch (NumberFormatException e) {
+                            System.out.println("Error, Invalid weight format in connection: " + line);
+                        }
+                    } else {
+                        System.out.println("Error, Invalid connection format (missing system or weight): " + line);
+                    }
+                } else {
+                    String system2 = rest.trim();
+                    String ip2 = deviceNameToIpMap.get(system2);  // Resolve system2 to its IP
+
+                    if (ip2 == null) {
+                        System.out.println("Error, Device " + system2 + " not found in map.");
+                        return;
+                    }
+
+                    System.out.println(system1 + " <--> " + system2);  // Print the connection without weight
+                    System.out.println("Resolved IPs - system1: " + ip1 + ", system2: " + ip2);
+                    connectionManager.addConnection(ip1, ip2, 0);  // Add the connection without weight
+                }
+            } else {
+                System.out.println("Error, Invalid connection format (missing system parts): " + line);
+            }
+        } else {
+            System.out.println("Error, Invalid connection format (missing '<-->'): " + line);
+        }
+        System.out.println();
+    }
+
+    private void printInterSubnetConnections() {
+        System.out.println("Debug: All inter-subnet connections:");
+        for (Map.Entry<String, Map<String, Integer>> entry : interSubnetConnections.entrySet()) {
+            String ip1 = entry.getKey();
+            for (Map.Entry<String, Integer> connection : entry.getValue().entrySet()) {
+                String ip2 = connection.getKey();
+                System.out.println("  " + ip1 + " <--> " + ip2);
+            }
+        }
+        System.out.println();  // Add a blank line for readability
     }
 }
