@@ -13,6 +13,7 @@ import java.util.LinkedList;
  * This class represents a subnet in the network. It manages network systems (computers and routers),
  * handles connections between systems, and provides utilities for subnet-specific tasks such as IP
  * validation and shortest path calculation.
+ * @author uylsn
  */
 public class Subnet {
     private final String baseAddress; // Base address of the subnet
@@ -22,7 +23,6 @@ public class Subnet {
 
     /**
      * Constructor to create a new subnet with the specified base address and netmask.
-     *
      * @param baseAddress the base IP address of the subnet
      * @param netmask     the netmask of the subnet
      */
@@ -51,7 +51,6 @@ public class Subnet {
 
     /**
      * Returns the IP range of the subnet in CIDR notation.
-     *
      * @return the range of the subnet as a string
      */
     public String getRange() {
@@ -60,7 +59,6 @@ public class Subnet {
 
     /**
      * Adds a network system (computer or router) to the subnet.
-     *
      * @param networkSystem the network system to add
      */
     public void addNetworkSystem(NetworkSystem networkSystem) {
@@ -83,36 +81,30 @@ public class Subnet {
      * @param weight  the weight of the connection
      */
     public void addConnection(String system1, String system2, int weight) {
-        System.out.println("SYSTEM1 : " + system1);
-        System.out.println("SYSTEM2 : " + system2);
-
         NetworkSystem ns1 = findNetworkSystem(system1);
         NetworkSystem ns2 = findNetworkSystem(system2);
 
         if (ns1 == null || ns2 == null) {
-            System.out.println("Error: One or both systems not found.");
+            System.out.println("Error, One or both systems not found.");
             return;
         }
 
         // Check if the connection already exists
         if (connections.containsKey(system1) && connections.get(system1).containsKey(system2)) {
-            System.out.println("Error: The systems are already connected. Connection: " + system1 + " <--> " + system2);
-            printAllConnections();  // Print all connections (debug)
-            return;  // Exit the method without adding the connection
+            System.out.println("Error, The systems are already connected. Connection: " + system1 + " <--> " + system2);
+            return;
         }
 
         // Intra-subnet connection: requires weight
         if (weight == 0) {
-            System.out.println("Error: Intra-subnet connections require a weight.");
+            System.out.println("Error, Intra-subnet connections require a weight.");
             return;
         }
 
         // Add the connection with the weight between the systems
         connections.computeIfAbsent(system1, k -> new HashMap<>()).put(system2, weight);
         connections.computeIfAbsent(system2, k -> new HashMap<>()).put(system1, weight);
-        System.out.println("Debug: Added intra-subnet connection: " + system1 + " <-->|" + weight + "| " + system2);
 
-        printAllConnections();  // Print all connections after adding (debug)
     }
     /**
      * Removes a connection between two systems within the subnet.
@@ -120,8 +112,6 @@ public class Subnet {
      * @param system2 the IP address of the second system
      */
     public void removeConnection(String system1, String system2) {
-        System.out.println("Attempting to remove connection between " + system1 + " and " + system2);
-
         // Check if both systems exist in the connections map
         if (connections.containsKey(system1) && connections.get(system1).containsKey(system2)) {
             // Remove the connection
@@ -136,12 +126,10 @@ public class Subnet {
                 connections.remove(system2);
             }
 
-            System.out.println("Connection between " + system1 + " and " + system2 + " removed.");
         } else {
-            System.out.println("Error: No connection exists between " + system1 + " and " + system2 + ".");
+            System.out.println("Error, No connection exists between " + system1 + " and " + system2 + ".");
         }
 
-        printAllConnections();  // Print all connections for debugging
     }
     /**
      * Removes a computer from the subnet.
@@ -164,7 +152,6 @@ public class Subnet {
             connectionMap.remove(ip); // Remove references to this system in other connections
         }
 
-        System.out.println("Debug: Removed computer and its connections: " + ip);
         return true;
     }
 
@@ -197,11 +184,10 @@ public class Subnet {
      * @return true if the IP is within the subnet, false otherwise
      */
     public boolean containsIp(String ip) {
-        System.out.println(ip);
 
         // Validate IP address format using the CIDR class
         if (!CIDR.isValidIp(ip) || !CIDR.isValidIp(baseAddress)) {
-            System.out.println("Error: Invalid IP address format.");
+            System.out.println("Error, Invalid IP address format.");
             return false;
         }
 
@@ -211,7 +197,7 @@ public class Subnet {
 
         // Ensure that the byte arrays are of the correct length (IPv4 length should be 4 bytes)
         if (baseAddressBytes.length != 4 || ipBytes.length != 4) {
-            System.out.println("Error: Invalid IP address length.");
+            System.out.println("Error, Invalid IP address length.");
             return false;
         }
 
@@ -235,7 +221,15 @@ public class Subnet {
     public List<String> findShortestPath(String fromIp, String toIp) {
         Map<String, Integer> distances = new HashMap<>();
         Map<String, String> previousNodes = new HashMap<>();
-        PriorityQueue<String> pq = new PriorityQueue<>(Comparator.comparingInt(distances::get));
+
+        // Custom priority queue without using Comparator.comparingInt
+        PriorityQueue<String> pq = new PriorityQueue<>(new Comparator<String>() {
+            @Override
+            public int compare(String ip1, String ip2) {
+                return Integer.compare(distances.get(ip1), distances.get(ip2));
+            }
+        });
+
         Set<String> visited = new HashSet<>();
 
         for (NetworkSystem system : networkSystems) {
@@ -275,6 +269,7 @@ public class Subnet {
 
         return path.size() == 1 ? null : path;  // Return null if no path was found
     }
+
 
     /**
      * Returns the router IP for the current subnet.
@@ -318,21 +313,6 @@ public class Subnet {
             }
         }
         return null;
-    }
-    /**
-     * Prints all the connections in the current network for debugging.
-     */
-    public void printAllConnections() {
-        System.out.println("Debug: All connections in the network:");
-        for (Map.Entry<String, Map<String, Integer>> entry : connections.entrySet()) {
-            String system1 = entry.getKey();
-            for (Map.Entry<String, Integer> connection : entry.getValue().entrySet()) {
-                String system2 = connection.getKey();
-                Integer weight = connection.getValue();
-                System.out.println("  " + system1 + " <--> " + system2 + (weight != null ? " | Weight: " + weight : ""));
-            }
-        }
-        System.out.println();  // Add a blank line for readability
     }
 
     @Override

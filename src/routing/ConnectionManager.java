@@ -10,23 +10,41 @@ import java.util.HashSet;
 import java.util.Comparator;
 import java.util.LinkedList;
 
-
+/**
+ * Manages the connections within and between subnets in a network.
+ * Responsible for adding/removing connections and sending packets between systems.
+ * @author uylsn
+ */
 public class ConnectionManager {
 
     private final Map<String, Subnet> subnets;
     private final Map<String, Map<String, Integer>> interSubnetConnections;
 
+    /**
+     * Constructor for ConnectionManager.
+     *
+     * @param subnets                Map of subnets by base address.
+     * @param interSubnetConnections  Map of inter-subnet connections between routers.
+     */
     public ConnectionManager(Map<String, Subnet> subnets, Map<String, Map<String, Integer>> interSubnetConnections) {
         this.subnets = subnets;
         this.interSubnetConnections = interSubnetConnections;
     }
 
+    /**
+     * Adds a connection between two IPs. Connections within the same subnet will have a weight,
+     * while connections between routers in different subnets will have no weight.
+     *
+     * @param ip1    The IP address of the first system.
+     * @param ip2    The IP address of the second system.
+     * @param weight The weight of the connection (only applicable for intra-subnet).
+     */
     public void addConnection(String ip1, String ip2, int weight) {
         Subnet subnet1 = findSubnetForIp(ip1);
         Subnet subnet2 = findSubnetForIp(ip2);
 
         if (subnet1 == null || subnet2 == null) {
-            System.out.println("Error: One or both IPs not found in any subnet.");
+            System.out.println("Error, One or both IPs not found in any subnet.");
             return;
         }
 
@@ -37,21 +55,26 @@ public class ConnectionManager {
             NetworkSystem router2 = subnet2.findNetworkSystem(ip2);
 
             if (router1 != null && router1.isRouter() && router2 != null && router2.isRouter()) {
-                System.out.println("Inter-subnet connection added between routers: " + ip1 + " <--> " + ip2);
                 interSubnetConnections.computeIfAbsent(ip1, k -> new HashMap<>()).put(ip2, 0);
                 interSubnetConnections.computeIfAbsent(ip2, k -> new HashMap<>()).put(ip1, 0);
             } else {
-                System.out.println("Error: Inter-subnet connections are only allowed between routers.");
+                System.out.println("Error, Inter-subnet connections are only allowed between routers.");
             }
         }
     }
 
+    /**
+     * Removes a connection between two IPs. If the connection is intra-subnet, it is removed within the subnet.
+     * For inter-subnet connections, the connection is removed between routers.
+     * @param ip1 The IP address of the first system.
+     * @param ip2 The IP address of the second system.
+     */
     public void removeConnection(String ip1, String ip2) {
         Subnet subnet1 = findSubnetForIp(ip1);
         Subnet subnet2 = findSubnetForIp(ip2);
 
         if (subnet1 == null || subnet2 == null) {
-            System.out.println("Error: One or both IPs not found in any subnet.");
+            System.out.println("Error, One or both IPs not found in any subnet.");
             return;
         }
 
@@ -62,7 +85,6 @@ public class ConnectionManager {
             NetworkSystem router2 = subnet2.findNetworkSystem(ip2);
 
             if (router1 != null && router1.isRouter() && router2 != null && router2.isRouter()) {
-                System.out.println("Inter-subnet connection removed between routers: " + ip1 + " <--> " + ip2);
                 interSubnetConnections.computeIfPresent(ip1, (k, v) -> {
                     v.remove(ip2);
                     return v.isEmpty() ? null : v;
@@ -72,30 +94,35 @@ public class ConnectionManager {
                     return v.isEmpty() ? null : v;
                 });
             } else {
-                System.out.println("Error: Inter-subnet connections can only be removed between routers.");
+                System.out.println("Error, Inter-subnet connections can only be removed between routers.");
             }
         }
     }
 
+    /**
+     * Sends a packet from one system to another. The method determines whether the packet
+     * is being sent within the same subnet or across different subnets and handles accordingly.
+     *
+     * @param fromIp The IP address of the sender.
+     * @param toIp   The IP address of the receiver.
+     */
     public void sendPacket(String fromIp, String toIp) {
         Subnet subnetFrom = findSubnetForIp(fromIp);
         Subnet subnetTo = findSubnetForIp(toIp);
 
         if (subnetFrom == null || subnetTo == null) {
-            System.out.println("Error: One or both IP addresses are not in any subnet.");
+            System.out.println("Error, One or both IP addresses are not in any subnet.");
             return;
         }
 
         if (subnetFrom.equals(subnetTo)) {
-            System.out.println("Intra-subnet packet delivery:");
             List<String> path = subnetFrom.findShortestPath(fromIp, toIp);
             if (path != null) {
                 printPath(path);
             } else {
-                System.out.println("No path found within the subnet.");
+                System.out.println("Error, No path found within the subnet.");
             }
         } else {
-            System.out.println("Inter-subnet packet delivery:");
             String senderRouterIp = subnetFrom.getRouterIp();
             List<String> pathToRouter = subnetFrom.findShortestPath(fromIp, senderRouterIp);
             String receiverRouterIp = subnetTo.getRouterIp();
@@ -107,15 +134,27 @@ public class ConnectionManager {
                 pathToRouter.addAll(pathToReceiver);
                 printPath(pathToRouter);
             } else {
-                System.out.println("No complete path found for inter-subnet delivery.");
+                System.out.println("Error, No complete path found for inter-subnet delivery.");
             }
         }
     }
 
+    /**
+     * Finds the shortest path between two routers in different subnets based on inter-subnet connections.
+     *
+     * @param fromRouterIp The IP address of the starting router.
+     * @param toRouterIp   The IP address of the destination router.
+     * @return The list of IP addresses representing the shortest path between the two routers, or null if no path is found.
+     */
     private List<String> findShortestInterSubnetPath(String fromRouterIp, String toRouterIp) {
         Map<String, Integer> distances = new HashMap<>();
         Map<String, String> previousNodes = new HashMap<>();
-        PriorityQueue<String> pq = new PriorityQueue<>(Comparator.comparingInt(distances::get));
+        PriorityQueue<String> pq = new PriorityQueue<>(new Comparator<String>() {
+            @Override
+            public int compare(String ip1, String ip2) {
+                return Integer.compare(distances.get(ip1), distances.get(ip2));
+            }
+        });
         Set<String> visited = new HashSet<>();
 
         for (String routerIp : interSubnetConnections.keySet()) {
@@ -155,8 +194,11 @@ public class ConnectionManager {
         return path.size() == 1 ? null : path;
     }
 
+    /**
+     * Prints the path taken by the packet.
+     * @param path List of IP addresses representing the path.
+     */
     private void printPath(List<String> path) {
-        System.out.println("Packet path:");
         List<String> distinctPath = new ArrayList<>();
         for (int i = 0; i < path.size(); i++) {
             if (i == 0 || !path.get(i).equals(path.get(i - 1))) {
@@ -164,18 +206,25 @@ public class ConnectionManager {
             }
         }
 
-        for (String hop : distinctPath) {
-            System.out.print(hop + " ");
-        }
-        System.out.println();
+        System.out.println(String.join(" ", distinctPath));
     }
 
+
+    /**
+     * Finds the subnet for a given IP address.
+     * @param ip The IP address to locate.
+     * @return The Subnet containing the IP address, or null if not found.
+     */
     private Subnet findSubnetForIp(String ip) {
-        for (Subnet subnet : subnets.values()) {
+        // Use explicit iteration to avoid functional constructs
+        for (Map.Entry<String, Subnet> entry : subnets.entrySet()) {
+            Subnet subnet = entry.getValue();
             if (subnet.containsIp(ip)) {
                 return subnet;
             }
         }
         return null;
     }
+
+
 }

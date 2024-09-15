@@ -2,6 +2,7 @@ package routing;
 /**
  * This class provides utility methods for converting IP addresses between
  * string and byte array formats, as well as performing other CIDR-related operations.
+ * @author uylsn
  */
 public final class CIDR {
     private CIDR() {
@@ -28,7 +29,6 @@ public final class CIDR {
 
     /**
      * Converts a byte array back to a string representation of the IP address.
-     *
      * @param byteArray the byte array representing the IP address
      * @return the string representation of the IP address
      */
