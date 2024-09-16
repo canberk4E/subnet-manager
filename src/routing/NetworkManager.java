@@ -140,7 +140,7 @@ public class NetworkManager {
      * @param parts array of command arguments.
      */
     private void handleSendCommand(String[] parts) {
-        if (parts.length < 4 || !parts[1].equals("packet")) {
+        if (!parts[1].equals("packet") || parts.length != 4)  {
             System.out.println("Error, Invalid 'send packet' command format. Expected 'send packet <from_ip> <to_ip>'.");
         } else {
             connectionManager.sendPacket(parts[2], parts[3]);
@@ -153,7 +153,7 @@ public class NetworkManager {
      * @param parts array of command arguments.
      */
     private void handleRemoveCommand(String[] parts) {
-        if (parts.length < 4) {
+        if (parts.length != 4) {
             System.out.println("Error, Invalid remove command format.");
             return;
         }
@@ -168,17 +168,34 @@ public class NetworkManager {
         }
     }
     private void listSubnets() {
-        List<Map.Entry<String, Subnet>> subnetList = new ArrayList<>(subnets.entrySet());
-        subnetList.sort(Comparator.comparing(entry -> entry.getValue().getBaseAddress()));
+        if (subnets.isEmpty()) {
+            System.out.println("Error, No subnets found.");
+        } else {
+            List<Map.Entry<String, Subnet>> subnetList = new ArrayList<>(subnets.entrySet());
 
-        StringBuilder result = new StringBuilder();
-        for (Map.Entry<String, Subnet> subnet : subnetList) {
-            result.append(subnet.getValue().toString()).append(" ");
+            // Sort subnets numerically by their IP address
+            subnetList.sort(Comparator.comparing(entry -> convertIpToLong(entry.getValue().getBaseAddress())));
+
+            StringBuilder result = new StringBuilder();
+            for (Map.Entry<String, Subnet> subnet : subnetList) {
+                result.append(subnet.getValue().toString()).append(" ");
+            }
+            System.out.println(result.toString().trim());
         }
-        System.out.println(result.toString().trim());
     }
-
-
+    /**
+     * Converts an IP address from its string format to a long for easier numerical sorting.
+     * @param ipAddress The IP address in string format (e.g., "192.168.1.1").
+     * @return A long representing the IP address.
+     */
+    private long convertIpToLong(String ipAddress) {
+        String[] ipParts = ipAddress.split("\\.");
+        long ipAsLong = 0;
+        for (int i = 0; i < ipParts.length; i++) {
+            ipAsLong = (ipAsLong << 8) + Integer.parseInt(ipParts[i]);
+        }
+        return ipAsLong;
+    }
     /**
      * Lists the range of a specific subnet.
      *
@@ -190,7 +207,7 @@ public class NetworkManager {
         Subnet sn = subnets.get(firstIp);
 
         if (sn == null) {
-            System.out.println("Subnet not found.");
+            System.out.println("Error, Subnet not found.");
             return;
         }
 
@@ -208,7 +225,7 @@ public class NetworkManager {
         Subnet sn = subnets.get(base);
 
         if (sn == null) {
-            System.out.println("Subnet not found.");
+            System.out.println("Error, Subnet not found.");
             return;
         }
         StringBuilder result = new StringBuilder();
@@ -233,7 +250,7 @@ public class NetworkManager {
             NetworkSystem computer = new NetworkSystem(ipAddress, false);
             sn.addNetworkSystem(computer);
         } else {
-            System.out.println("Subnet not found.");
+            System.out.println("Error, Subnet not found.");
         }
     }
 
@@ -262,6 +279,11 @@ public class NetworkManager {
      * @throws IOException if there's an issue reading the file.
      */
     public void loadNetwork(String path) throws IOException {
+        // Clear the existing network data before loading a new network
+        subnets.clear();
+        deviceNameToIpMap.clear();
+        interSubnetConnections.clear();
+
         BufferedReader reader = new BufferedReader(new FileReader(path));
         String line;
         Subnet currentSubnet = null;
@@ -300,7 +322,6 @@ public class NetworkManager {
                 String[] parts = line.split("\\[|\\]");
                 String systemName = parts[0].trim();
                 String ipAddress = parts[1].trim();
-
                 if (currentSubnet != null) {
                     boolean isRouter = systemName.toLowerCase().contains("router");
                     NetworkSystem networkSystem = new NetworkSystem(ipAddress, isRouter);
@@ -310,15 +331,14 @@ public class NetworkManager {
                 }
             }
         }
-
         reader.close();
-
         if (!interSubnetConnections.isEmpty()) {
             for (String connection : interSubnetConnections) {
                 System.out.println(processConnection(connection, false));
             }
         }
     }
+
 
     /**
      * Processes the connection line and returns the connection string.

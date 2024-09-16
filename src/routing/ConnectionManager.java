@@ -116,6 +116,7 @@ public class ConnectionManager {
         }
 
         if (subnetFrom.equals(subnetTo)) {
+            // Intra-subnet packet routing
             List<String> path = subnetFrom.findShortestPath(fromIp, toIp);
             if (path != null) {
                 printPath(path);
@@ -123,21 +124,37 @@ public class ConnectionManager {
                 System.out.println("Error, No path found within the subnet.");
             }
         } else {
+            // Inter-subnet packet routing
             String senderRouterIp = subnetFrom.getRouterIp();
             List<String> pathToRouter = subnetFrom.findShortestPath(fromIp, senderRouterIp);
+
+            if (senderRouterIp == null || pathToRouter == null) {
+                System.out.println("Error, No path found to the router in the sender's subnet.");
+                return;
+            }
+
             String receiverRouterIp = subnetTo.getRouterIp();
             List<String> routerToRouterPath = findShortestInterSubnetPath(senderRouterIp, receiverRouterIp);
             List<String> pathToReceiver = subnetTo.findShortestPath(receiverRouterIp, toIp);
 
-            if (pathToRouter != null && routerToRouterPath != null && pathToReceiver != null) {
-                pathToRouter.addAll(routerToRouterPath);
-                pathToRouter.addAll(pathToReceiver);
-                printPath(pathToRouter);
-            } else {
-                System.out.println("Error, No complete path found for inter-subnet delivery.");
+            if (routerToRouterPath == null || routerToRouterPath.isEmpty()) {
+                System.out.println("Error, No router-to-router path found between the subnets.");
+                return;
             }
+
+            if (pathToReceiver == null || pathToReceiver.isEmpty()) {
+                System.out.println("Error, No path found from the router to the receiver in the destination subnet.");
+                return;
+            }
+
+            // Concatenate the three parts of the path and print the result
+            pathToRouter.addAll(routerToRouterPath);
+            pathToRouter.addAll(pathToReceiver);
+            printPath(pathToRouter);
         }
     }
+
+
 
     /**
      * Finds the shortest path between two routers in different subnets based on inter-subnet connections.
@@ -157,6 +174,7 @@ public class ConnectionManager {
         });
         Set<String> visited = new HashSet<>();
 
+        // Initialize distances
         for (String routerIp : interSubnetConnections.keySet()) {
             distances.put(routerIp, Integer.MAX_VALUE);
         }
@@ -193,6 +211,8 @@ public class ConnectionManager {
 
         return path.size() == 1 ? null : path;
     }
+
+
 
     /**
      * Prints the path taken by the packet.

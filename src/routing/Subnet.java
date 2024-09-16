@@ -16,6 +16,7 @@ import java.util.LinkedList;
  * @author uylsn
  */
 public class Subnet {
+    private String routerIp;
     private final String baseAddress; // Base address of the subnet
     private final int netmask; // Netmask for the subnet
     private final List<NetworkSystem> networkSystems = new ArrayList<>(); // List of all network systems (computers, routers) in the subnet
@@ -284,7 +285,6 @@ public class Subnet {
         }
         return null;  // Return null if no router is found
     }
-
 
     /**
      * Finds an IP address by the network system's name.
