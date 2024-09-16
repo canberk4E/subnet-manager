@@ -140,21 +140,29 @@ public class Subnet {
     public boolean removeComputer(String ip) {
         // Find the system to remove
         NetworkSystem systemToRemove = findNetworkSystem(ip);
-        if (systemToRemove.isRouter()) {
+
+        // Check if the system exists
+        if (systemToRemove == null) {
+            // Print the error message and return false
             return false;
         }
 
+        // Prevent removal of routers
+        if (systemToRemove.isRouter()) {
+            System.out.println("Error, Cannot remove router " + ip + ".");
+            return false;
+        }
         // Remove the system from the network systems list
         networkSystems.remove(systemToRemove);
-
         // Remove any connections involving this system
         connections.remove(ip); // Remove connections where this system is the key
         for (Map<String, Integer> connectionMap : connections.values()) {
             connectionMap.remove(ip); // Remove references to this system in other connections
         }
-
         return true;
     }
+
+
 
     /**
      * Gets the last possible IP address in the subnet (broadcast address).

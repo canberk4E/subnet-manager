@@ -147,7 +147,6 @@ public class ConnectionManager {
                 return;
             }
 
-            // Concatenate the three parts of the path and print the result
             pathToRouter.addAll(routerToRouterPath);
             pathToRouter.addAll(pathToReceiver);
             printPath(pathToRouter);

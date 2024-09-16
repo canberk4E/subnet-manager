@@ -1,5 +1,4 @@
 package routing;
-
 import java.io.BufferedReader;
 import java.io.FileReader;
 import java.io.IOException;
@@ -8,20 +7,15 @@ import java.util.Comparator;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
-
 /**
  * network manager.
  * @author uylsn
  */
-
 public class NetworkManager {
     private final Map<String, Subnet> subnets = new HashMap<>();
     private final Map<String, String> deviceNameToIpMap = new HashMap<>();
     private final Map<String, Map<String, Integer>> interSubnetConnections = new HashMap<>();
-
-    // Use an instance of ConnectionManager for managing connections
     private final ConnectionManager connectionManager;
-
     /**
      * Constructor for NetworkManager.
      * Initializes the connection manager and network data structures.
@@ -29,10 +23,8 @@ public class NetworkManager {
     public NetworkManager() {
         this.connectionManager = new ConnectionManager(subnets, interSubnetConnections);
     }
-
     /**
      * Processes user commands and executes the appropriate actions.
-     *
      * @param command the user input command as a String.
      * @throws IOException          if there's an issue reading files.
      * @throws InterruptedException if there's an issue with process interruptions.
@@ -64,7 +56,6 @@ public class NetworkManager {
                 break;
         }
     }
-
     /**
      * Handles the 'load' command to load a network from a file.
      *
@@ -90,7 +81,13 @@ public class NetworkManager {
             return;
         }
         switch (parts[1]) {
-            case "subnets" -> listSubnets();
+            case "subnets" -> {
+                if (parts.length == 2) {
+                    listSubnets();
+                } else {
+                    System.out.println("Error, wrong format for list subnets.");
+                }
+            }
             case "range" -> {
                 if (parts.length < 3) {
                     System.out.println("Error, Missing subnet argument for 'list range'. Expected 'list range <subnet>'.");
@@ -146,27 +143,32 @@ public class NetworkManager {
             connectionManager.sendPacket(parts[2], parts[3]);
         }
     }
-
     /**
      * Handles the 'remove' command to remove a computer or connection.
-     *
      * @param parts array of command arguments.
      */
     private void handleRemoveCommand(String[] parts) {
+        // Ensure there are exactly four parts for a valid remove connection command
         if (parts.length != 4) {
             System.out.println("Error, Invalid remove command format.");
             return;
         }
-
         if (parts[1].equals("connection")) {
+            // If "connection" is the second part, handle removing a connection
             connectionManager.removeConnection(parts[2], parts[3]);
         } else if (parts[1].equals("computer")) {
+            // If "computer" is the second part, handle removing a computer
             String subnetAddress = parts[2].split("/")[0];
-            removeComputer(subnetAddress, parts[3]);
+            boolean removed = removeComputer(subnetAddress, parts[3]);
+            if (!removed) {
+                System.out.println("Error, System " + parts[3] + " not found in the subnet.");
+            }
         } else {
             System.out.println("Error, Invalid remove command. Expected 'connection' or 'computer'.");
         }
     }
+
+
     private void listSubnets() {
         if (subnets.isEmpty()) {
             System.out.println("Error, No subnets found.");
@@ -198,25 +200,20 @@ public class NetworkManager {
     }
     /**
      * Lists the range of a specific subnet.
-     *
      * @param subnet the subnet in CIDR notation.
      */
     private void listRange(String subnet) throws IllegalArgumentException {
         String[] parts = subnet.split("/");
         String firstIp = parts[0];
         Subnet sn = subnets.get(firstIp);
-
         if (sn == null) {
             System.out.println("Error, Subnet not found.");
             return;
         }
-
         System.out.println(firstIp + " " + sn.getLastIp());
     }
-
     /**
      * Lists all systems in a specific subnet.
-     *
      * @param subnet the subnet in CIDR notation.
      */
     private void listSystems(String subnet) {
@@ -232,15 +229,10 @@ public class NetworkManager {
         for (NetworkSystem networkSystem : sn.getNetworkSystems()) {
             result.append(networkSystem.ip()).append(" ");
         }
-
-        // Trim the trailing space and print the result
         System.out.println(result.toString().trim());
     }
-
-
     /**
      * Adds a computer to a specific subnet.
-     *
      * @param subnetAddress the subnet address to which the computer will be added.
      * @param ipAddress     the IP address of the computer to be added.
      */
@@ -249,27 +241,32 @@ public class NetworkManager {
         if (sn != null) {
             NetworkSystem computer = new NetworkSystem(ipAddress, false);
             sn.addNetworkSystem(computer);
+
         } else {
             System.out.println("Error, Subnet not found.");
         }
     }
-
     /**
-     * Removes a computer from a specific subnet.
-     *
-     * @param subnetAddress the subnet address from which the computer will be removed.
-     * @param ipAddress     the IP address of the computer to be removed.
+     * Removes a computer from the subnet.
+     * @param subnetAddress the subnet address from which the computer will be removed
+     * @param ip the IP address of the computer to remove
+     * @return true if the computer was removed, false if the system is a router or not found
      */
-    private void removeComputer(String subnetAddress, String ipAddress) {
-        Subnet targetSubnet = subnets.get(subnetAddress.trim());
-        if (targetSubnet != null) {
-            boolean removed = targetSubnet.removeComputer(ipAddress);
-            if (!removed) {
-                System.out.println("Error, Computer " + ipAddress + " not found in subnet " + subnetAddress.trim());
-            }
-        } else {
-            System.out.println("Error, Subnet " + subnetAddress + " not found.");
+    private boolean removeComputer(String subnetAddress, String ip) {
+        Subnet targetSubnet = subnets.get(subnetAddress);
+        if (targetSubnet == null) {
+            return false;
         }
+        NetworkSystem systemToRemove = targetSubnet.findNetworkSystem(ip);
+        if (systemToRemove == null) {
+            return false;  // System not found, return false for error handling in handleRemoveCommand
+        }
+        if (systemToRemove.isRouter()) {
+            System.out.println("Error, Cannot remove router " + ip + ".");
+            return false;
+        }
+        targetSubnet.removeComputer(ip);  // Remove the computer
+        return true;
     }
 
     /**
