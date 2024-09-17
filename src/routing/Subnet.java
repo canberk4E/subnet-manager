@@ -193,14 +193,12 @@ public class Subnet {
      */
     public boolean containsIp(String ip) {
         // Validate IP address format using the CIDR class
-        if (!CIDR.isValidIp(ip)) {
-            // Only print error once and return false immediately
-            if (!CIDR.isValidIp(baseAddress)) {
-                System.out.println("Error, Invalid base IP address format.");
-            }
+        if (!CIDR.isValidIp(ip) || !CIDR.isValidIp(baseAddress)) {
             System.out.println("Error, Invalid IP address format.");
             return false;
         }
+
+        // Convert the base address and the given IP address to byte arrays using CIDR
         byte[] baseAddressBytes = CIDR.convertIpToByteArray(baseAddress);
         byte[] ipBytes = CIDR.convertIpToByteArray(ip);
 
@@ -218,9 +216,10 @@ public class Subnet {
         int baseAddressInt = CIDR.byteArrayToInt(baseAddressBytes);
         int ipInt = CIDR.byteArrayToInt(ipBytes);
 
-        // Check if the given IP is within the subnet's range
+        // Apply the mask to both the base address and the IP address
         return (baseAddressInt & mask) == (ipInt & mask);
     }
+
 
     /**
      * Finds the shortest path between two IP addresses in the subnet.
