@@ -9,7 +9,6 @@ public class Connection {
     private final NetworkSystem networkSystem1;
     private final NetworkSystem networkSystem2;
     private final int weight;
-
     /**
      * Constructor to create a connection between two network systems.
      *

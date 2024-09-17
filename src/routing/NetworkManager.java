@@ -34,7 +34,6 @@ public class NetworkManager {
         if (parts.length == 0 || parts[0].isEmpty()) {
             return;
         }
-
         switch (parts[0]) {
             case "load":
                 handleLoadCommand(parts);
@@ -56,24 +55,20 @@ public class NetworkManager {
                 break;
         }
     }
-
     /**
      * Handles the 'load' command to load a network from a file.
-     *
      * @param parts array of command arguments.
      * @throws IOException if there's an issue reading the file.
      */
     private void handleLoadCommand(String[] parts) throws IOException {
-        if (parts.length < 3 || !parts[1].equals("network")) {
+        if (parts.length != 3 || !parts[1].equals("network")) {
             System.out.println("Error, Invalid 'load' command format. Expected 'load network <file_path>'.");
         } else {
             loadNetwork(parts[2]);
         }
     }
-
     /**
      * Handles the 'list' command to list network information.
-     *
      * @param parts array of command arguments.
      */
     private void handleListCommand(String[] parts) {
@@ -106,35 +101,41 @@ public class NetworkManager {
             default -> System.out.println("Error, Invalid 'list' command. Expected 'subnets', 'range', or 'systems'.");
         }
     }
-
     /**
      * Handles the 'add' command to add a computer or connection to the network.
-     *
      * @param parts array of command arguments.
      */
     private void handleAddCommand(String[] parts) {
-        if (parts.length < 4 || (!parts[1].equals("computer") && !parts[1].equals("connection"))) {
+        if (parts.length < 4 || (!parts[1].equals("computer") && !parts[1].equals("connection")) || parts[2].equals(parts[3])) {
             System.out.println("Error, Invalid 'add' command format.");
             return;
         }
-
         if (parts[1].equals("computer")) {
             String subnetAddress = parts[2].split("/")[0];
             addComputer(subnetAddress, parts[3]);
         } else {
-            if (parts.length == 5) {
-                connectionManager.addConnection(parts[2], parts[3], Integer.parseInt(parts[4]));
-            } else if (parts.length == 4) {
+            if (!CIDR.isValidIp(parts[2]) || !CIDR.isValidIp(parts[3])) {
+                System.out.println("Error, Invalid IP address format.");
+                return;
+            }
+            NetworkSystem system1 = connectionManager.findSystemByIp(parts[2]);
+            NetworkSystem system2 = connectionManager.findSystemByIp(parts[3]);
+            if (system1 != null && system2 != null && system1.isRouter() && system2.isRouter()) {
                 connectionManager.addConnection(parts[2], parts[3], 0);
+            } else if (parts.length == 5) {
+                try {
+                    int weight = Integer.parseInt(parts[4]);
+                    connectionManager.addConnection(parts[2], parts[3], weight);
+                } catch (NumberFormatException e) {
+                    System.out.println("Error, Invalid weight format.");
+                }
             } else {
                 System.out.println("Error, Invalid 'add connection' command format. Expected 'add connection <ip1> <ip2> <weight>'.");
             }
         }
     }
-
     /**
      * Handles the 'send' command to send a packet between systems.
-     *
      * @param parts array of command arguments.
      */
     private void handleSendCommand(String[] parts) {
@@ -149,13 +150,11 @@ public class NetworkManager {
      * @param parts array of command arguments.
      */
     private void handleRemoveCommand(String[] parts) {
-        // Ensure there are exactly four parts for a valid remove connection command
         if (parts.length != 4) {
             System.out.println("Error, Invalid remove command format.");
             return;
         }
         if (parts[1].equals("connection")) {
-            // If "connection" is the second part, handle removing a connection
             connectionManager.removeConnection(parts[2], parts[3]);
         } else if (parts[1].equals("computer")) {
             // If "computer" is the second part, handle removing a computer
@@ -175,10 +174,7 @@ public class NetworkManager {
             System.out.println("Error, No subnets found.");
         } else {
             List<Map.Entry<String, Subnet>> subnetList = new ArrayList<>(subnets.entrySet());
-
-            // Sort subnets numerically by their IP address
-            subnetList.sort(Comparator.comparing(entry -> convertIpToLong(entry.getValue().getBaseAddress())));
-
+            subnetList.sort(Comparator.comparing(entry -> NetworkUtility.convertIpToLong(entry.getValue().getBaseAddress())));
             StringBuilder result = new StringBuilder();
             for (Map.Entry<String, Subnet> subnet : subnetList) {
                 result.append(subnet.getValue().toString()).append(" ");
@@ -186,19 +182,7 @@ public class NetworkManager {
             System.out.println(result.toString().trim());
         }
     }
-    /**
-     * Converts an IP address from its string format to a long for easier numerical sorting.
-     * @param ipAddress The IP address in string format (e.g., "192.168.1.1").
-     * @return A long representing the IP address.
-     */
-    private long convertIpToLong(String ipAddress) {
-        String[] ipParts = ipAddress.split("\\.");
-        long ipAsLong = 0;
-        for (int i = 0; i < ipParts.length; i++) {
-            ipAsLong = (ipAsLong << 8) + Integer.parseInt(ipParts[i]);
-        }
-        return ipAsLong;
-    }
+
     /**
      * Lists the range of a specific subnet.
      * @param subnet the subnet in CIDR notation.
@@ -221,7 +205,6 @@ public class NetworkManager {
         String[] parts = subnet.split("/");
         String base = parts[0];
         Subnet sn = subnets.get(base);
-
         if (sn == null) {
             System.out.println("Error, Subnet not found.");
             return;
@@ -268,10 +251,8 @@ public class NetworkManager {
         targetSubnet.removeComputer(ip);  // Remove the computer
         return true;
     }
-
     /**
      * Loads the network from a file.
-     *
      * @param path the file path containing network data.
      * @throws IOException if there's an issue reading the file.
      */
@@ -280,17 +261,14 @@ public class NetworkManager {
         subnets.clear();
         deviceNameToIpMap.clear();
         interSubnetConnections.clear();
-
         BufferedReader reader = new BufferedReader(new FileReader(path));
         String line;
         Subnet currentSubnet = null;
         List<String> interSubnetConnections = new ArrayList<>();
         Map<Subnet, List<String>> intraSubnetConnections = new HashMap<>();
         System.out.println("graph");
-
         while ((line = reader.readLine()) != null) {
             line = line.trim();
-
             if (line.startsWith("subgraph")) {
                 String[] parts = line.split("\\s+");
                 String cidr = parts[1];
@@ -335,63 +313,88 @@ public class NetworkManager {
             }
         }
     }
-
-
     /**
      * Processes the connection line and returns the connection string.
-     *
      * @param line         the connection line.
      * @param isIntraSubnet flag to indicate whether the connection is intra-subnet.
      * @return the formatted connection string.
      */
     private String processConnection(String line, boolean isIntraSubnet) {
         StringBuilder connectionBuilder = new StringBuilder();
-
         if (line.contains("<-->")) {
             String[] parts = line.split("<-->");
             if (parts.length == 2) {
                 String system1 = parts[0].trim();
                 String rest = parts[1].trim();
-
                 String ip1 = deviceNameToIpMap.get(system1);
+
                 if (ip1 == null) {
-                    System.out.println("Error, Device " + system1 + " not found in map.");
-                    return "";
+                    return NetworkUtility.handleMissingDevice(system1);
                 }
 
                 if (rest.contains("|")) {
-                    String[] weightParts = rest.split("\\|");
-                    if (weightParts.length == 3) {
-                        String system2 = weightParts[2].trim();
-                        String ip2 = deviceNameToIpMap.get(system2);
-
-                        if (ip2 == null) {
-                            System.out.println("Error, Device " + system2 + " not found in map.");
-                            return "";
-                        }
-
-                        int weight = Integer.parseInt(weightParts[1].trim());
-                        connectionBuilder.append("        ").append(system1).append(" <-->|")
-                                .append(weight).append("| ").append(system2);
-                        connectionManager.addConnection(ip1, ip2, weight);
-                    }
+                    return handleIntraSubnetConnection(system1, ip1, rest, connectionBuilder);
                 } else {
-                    String system2 = rest.trim();
-                    String ip2 = deviceNameToIpMap.get(system2);
-
-                    if (ip2 == null) {
-                        System.out.println("Error, Device " + system2 + " not found in map.");
-                        return "";
-                    }
-
-                    if (!isIntraSubnet) {
-                        connectionBuilder.append("    ").append(system1).append(" <--> ").append(system2);
-                        connectionManager.addConnection(ip1, ip2, 0);
-                    }
+                    return handleInterSubnetConnection(system1, ip1, rest, isIntraSubnet, connectionBuilder);
                 }
             }
+            System.out.println("Error, Invalid connection format.");
+        }
+        return connectionBuilder.toString();
+    }
+    /**
+     * Handles the intra-subnet connection processing.
+     */
+    private String handleIntraSubnetConnection(String system1, String ip1, String rest, StringBuilder connectionBuilder) {
+        String[] weightParts = rest.split("\\|");
+        if (weightParts.length != 3) {
+            return handleInvalidConnectionFormat();
         }
 
+        String system2 = weightParts[2].trim();
+        String ip2 = deviceNameToIpMap.get(system2);
+
+        if (ip2 == null) {
+            return NetworkUtility.handleMissingDevice(system2);
+        }
+        if (!NetworkUtility.areIpsInSameSubnet(ip1, ip2, connectionManager)) {
+            return "";
+        }
+        try {
+            int weight = Integer.parseInt(weightParts[1].trim());
+            connectionBuilder.append("        ").append(system1).append(" <-->|")
+                    .append(weight).append("| ").append(system2);
+            connectionManager.addConnection(ip1, ip2, weight);
+        } catch (NumberFormatException e) {
+            System.out.println("Error, Invalid weight format.");
+            return "";
+        }
         return connectionBuilder.toString();
+    }
+    /**
+     * Handles the inter-subnet connection.
+     */
+    private String handleInterSubnetConnection(String system1, String ip1, String rest,
+                                               boolean isIntraSubnet, StringBuilder connectionBuilder) {
+        String system2 = rest.trim();
+        String ip2 = deviceNameToIpMap.get(system2);
+        if (ip2 == null) {
+            return NetworkUtility.handleMissingDevice(system2);
+        }
+        if (!NetworkUtility.areIpsInDifferentSubnets(ip1, ip2, connectionManager)) {
+            return "";
+        }
+        if (!isIntraSubnet) {
+            connectionBuilder.append("    ").append(system1).append(" <--> ").append(system2);
+            connectionManager.addConnection(ip1, ip2, 0);
+        }
+        return connectionBuilder.toString();
+    }
+    /**
+     * Handles the case of invalid connection format.
+     */
+    private String handleInvalidConnectionFormat() {
+        System.out.println("Error, Invalid connection format with weight.");
+        return "";
     }
 }

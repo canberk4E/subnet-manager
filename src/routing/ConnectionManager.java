@@ -225,6 +225,7 @@ public class ConnectionManager {
                 }
             }
         }
+
         // Reconstruct the shortest path
         List<String> path = new LinkedList<>();
         for (String at = toRouterIp; at != null; at = previousNodes.get(at)) {
@@ -255,7 +256,7 @@ public class ConnectionManager {
      * @param ip The IP address to locate.
      * @return The Subnet containing the IP address, or null if not found.
      */
-    private Subnet findSubnetForIp(String ip) {
+    Subnet findSubnetForIp(String ip) {
         for (Map.Entry<String, Subnet> entry : subnets.entrySet()) {
             Subnet subnet = entry.getValue();
             if (subnet.containsIp(ip)) {
@@ -264,7 +265,6 @@ public class ConnectionManager {
         }
         return null;
     }
-
     /**
      * Prints the current inter-subnet connections for debugging purposes.
      */
@@ -280,4 +280,20 @@ public class ConnectionManager {
             }
         }
     }
+
+    /**
+     * to find the System by its ip.
+     * @param ip the given input ip.
+     * @return the system.
+     */
+    public NetworkSystem findSystemByIp(String ip) {
+        for (Subnet subnet : subnets.values()) {
+            NetworkSystem system = subnet.findNetworkSystem(ip);
+            if (system != null) {
+                return system;
+            }
+        }
+        return null; // Return null if the system is not found
+    }
+
 }

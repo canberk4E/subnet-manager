@@ -32,7 +32,7 @@ public final class Main {
             try {
                 networkManager.processCommand(command);
             } catch (IOException | InterruptedException e) {
-                System.err.println("Error: I/O issue - " + e.getMessage());
+                System.err.println("Error, " + e.getMessage());
             }
         }
 

@@ -8,7 +8,6 @@ public final class CIDR {
     private CIDR() {
 
     }
-
     /**
      * Converts an IP address string into a byte array.
      *

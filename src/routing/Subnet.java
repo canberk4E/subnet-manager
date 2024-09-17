@@ -105,7 +105,6 @@ public class Subnet {
         // Add the connection with the weight between the systems
         connections.computeIfAbsent(system1, k -> new HashMap<>()).put(system2, weight);
         connections.computeIfAbsent(system2, k -> new HashMap<>()).put(system1, weight);
-
     }
     /**
      * Removes a connection between two systems within the subnet.
@@ -193,14 +192,15 @@ public class Subnet {
      * @return true if the IP is within the subnet, false otherwise
      */
     public boolean containsIp(String ip) {
-
         // Validate IP address format using the CIDR class
-        if (!CIDR.isValidIp(ip) || !CIDR.isValidIp(baseAddress)) {
+        if (!CIDR.isValidIp(ip)) {
+            // Only print error once and return false immediately
+            if (!CIDR.isValidIp(baseAddress)) {
+                System.out.println("Error, Invalid base IP address format.");
+            }
             System.out.println("Error, Invalid IP address format.");
             return false;
         }
-
-        // Convert the base address and the given IP address to byte arrays using CIDR
         byte[] baseAddressBytes = CIDR.convertIpToByteArray(baseAddress);
         byte[] ipBytes = CIDR.convertIpToByteArray(ip);
 
@@ -221,6 +221,7 @@ public class Subnet {
         // Check if the given IP is within the subnet's range
         return (baseAddressInt & mask) == (ipInt & mask);
     }
+
     /**
      * Finds the shortest path between two IP addresses in the subnet.
      * @param fromIp the source IP address
