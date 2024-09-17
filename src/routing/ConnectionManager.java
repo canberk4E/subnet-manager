@@ -18,7 +18,10 @@ import java.util.LinkedList;
 public class ConnectionManager {
 
     private final Map<String, Subnet> subnets;
+    // Tracks all routes between routers, used for packet routing (may include indirect paths)
     private final Map<String, Map<String, Integer>> interSubnetConnections;
+    // Tracks only direct connections between routers
+    private final Map<String, Set<String>> directInterSubnetConnections;
 
     /**
      * Constructor for ConnectionManager.
@@ -29,6 +32,7 @@ public class ConnectionManager {
     public ConnectionManager(Map<String, Subnet> subnets, Map<String, Map<String, Integer>> interSubnetConnections) {
         this.subnets = subnets;
         this.interSubnetConnections = interSubnetConnections;
+        this.directInterSubnetConnections = new HashMap<>(); // New map for direct connections
     }
 
     /**
@@ -49,12 +53,18 @@ public class ConnectionManager {
         }
 
         if (subnet1.equals(subnet2)) {
+            // Intra-subnet connection
             subnet1.addConnection(ip1, ip2, weight);
         } else {
             NetworkSystem router1 = subnet1.findNetworkSystem(ip1);
             NetworkSystem router2 = subnet2.findNetworkSystem(ip2);
 
             if (router1 != null && router1.isRouter() && router2 != null && router2.isRouter()) {
+                // Add to direct connections
+                directInterSubnetConnections.computeIfAbsent(ip1, k -> new HashSet<>()).add(ip2);
+                directInterSubnetConnections.computeIfAbsent(ip2, k -> new HashSet<>()).add(ip1);
+
+                // Also add to the global inter-subnet map for routing purposes
                 interSubnetConnections.computeIfAbsent(ip1, k -> new HashMap<>()).put(ip2, 0);
                 interSubnetConnections.computeIfAbsent(ip2, k -> new HashMap<>()).put(ip1, 0);
             } else {
@@ -79,12 +89,22 @@ public class ConnectionManager {
         }
 
         if (subnet1.equals(subnet2)) {
+            // Intra-subnet connection removal
             subnet1.removeConnection(ip1, ip2);
         } else {
-            NetworkSystem router1 = subnet1.findNetworkSystem(ip1);
-            NetworkSystem router2 = subnet2.findNetworkSystem(ip2);
+            // Remove direct connection
+            if (directInterSubnetConnections.containsKey(ip1) && directInterSubnetConnections.get(ip1).contains(ip2)) {
+                directInterSubnetConnections.get(ip1).remove(ip2);
+                if (directInterSubnetConnections.get(ip1).isEmpty()) {
+                    directInterSubnetConnections.remove(ip1);
+                }
 
-            if (router1 != null && router1.isRouter() && router2 != null && router2.isRouter()) {
+                directInterSubnetConnections.get(ip2).remove(ip1);
+                if (directInterSubnetConnections.get(ip2).isEmpty()) {
+                    directInterSubnetConnections.remove(ip2);
+                }
+
+                // Also remove from global routing map
                 interSubnetConnections.computeIfPresent(ip1, (k, v) -> {
                     v.remove(ip2);
                     return v.isEmpty() ? null : v;
@@ -94,7 +114,7 @@ public class ConnectionManager {
                     return v.isEmpty() ? null : v;
                 });
             } else {
-                System.out.println("Error, Inter-subnet connections can only be removed between routers.");
+                System.out.println("Error, No direct connection exists between these routers.");
             }
         }
     }
@@ -147,16 +167,15 @@ public class ConnectionManager {
                 return;
             }
 
+            // Concatenate the three parts of the path and print the result
             pathToRouter.addAll(routerToRouterPath);
             pathToRouter.addAll(pathToReceiver);
             printPath(pathToRouter);
         }
     }
 
-
-
     /**
-     * Finds the shortest path between two routers in different subnets based on inter-subnet connections.
+     * Finds the shortest path between two routers in different subnets based on direct inter-subnet connections.
      *
      * @param fromRouterIp The IP address of the starting router.
      * @param toRouterIp   The IP address of the destination router.
@@ -165,16 +184,19 @@ public class ConnectionManager {
     private List<String> findShortestInterSubnetPath(String fromRouterIp, String toRouterIp) {
         Map<String, Integer> distances = new HashMap<>();
         Map<String, String> previousNodes = new HashMap<>();
+
+        // Manual comparator without java.util.function
         PriorityQueue<String> pq = new PriorityQueue<>(new Comparator<String>() {
             @Override
             public int compare(String ip1, String ip2) {
                 return Integer.compare(distances.get(ip1), distances.get(ip2));
             }
         });
+
         Set<String> visited = new HashSet<>();
 
         // Initialize distances
-        for (String routerIp : interSubnetConnections.keySet()) {
+        for (String routerIp : directInterSubnetConnections.keySet()) {
             distances.put(routerIp, Integer.MAX_VALUE);
         }
         distances.put(fromRouterIp, 0);
@@ -188,21 +210,22 @@ public class ConnectionManager {
                 break;
             }
 
-            Map<String, Integer> neighbors = interSubnetConnections.get(current);
+            // Get neighbors of the current router (direct connections)
+            Set<String> neighbors = directInterSubnetConnections.get(current);
             if (neighbors != null) {
-                for (Map.Entry<String, Integer> neighbor : neighbors.entrySet()) {
-                    if (!visited.contains(neighbor.getKey())) {
-                        int newDist = distances.get(current) + neighbor.getValue();
-                        if (newDist < distances.get(neighbor.getKey())) {
-                            distances.put(neighbor.getKey(), newDist);
-                            previousNodes.put(neighbor.getKey(), current);
-                            pq.add(neighbor.getKey());
+                for (String neighbor : neighbors) {
+                    if (!visited.contains(neighbor)) {
+                        int newDist = distances.get(current) + 1;  // Assuming all direct connections have weight 1
+                        if (newDist < distances.get(neighbor)) {
+                            distances.put(neighbor, newDist);
+                            previousNodes.put(neighbor, current);
+                            pq.add(neighbor);
                         }
                     }
                 }
             }
         }
-
+        // Reconstruct the shortest path
         List<String> path = new LinkedList<>();
         for (String at = toRouterIp; at != null; at = previousNodes.get(at)) {
             path.add(0, at);
@@ -210,7 +233,6 @@ public class ConnectionManager {
 
         return path.size() == 1 ? null : path;
     }
-
 
 
     /**
@@ -228,14 +250,12 @@ public class ConnectionManager {
         System.out.println(String.join(" ", distinctPath));
     }
 
-
     /**
      * Finds the subnet for a given IP address.
      * @param ip The IP address to locate.
      * @return The Subnet containing the IP address, or null if not found.
      */
     private Subnet findSubnetForIp(String ip) {
-        // Use explicit iteration to avoid functional constructs
         for (Map.Entry<String, Subnet> entry : subnets.entrySet()) {
             Subnet subnet = entry.getValue();
             if (subnet.containsIp(ip)) {
@@ -245,5 +265,19 @@ public class ConnectionManager {
         return null;
     }
 
-
+    /**
+     * Prints the current inter-subnet connections for debugging purposes.
+     */
+    public void printInterSubnetConnections() {
+        System.out.println("Inter-Subnet Connections:");
+        for (Map.Entry<String, Map<String, Integer>> entry : interSubnetConnections.entrySet()) {
+            String fromRouter = entry.getKey();
+            Map<String, Integer> connections = entry.getValue();
+            for (Map.Entry<String, Integer> connection : connections.entrySet()) {
+                String toRouter = connection.getKey();
+                int weight = connection.getValue();
+                System.out.println("    " + fromRouter + " <--> " + toRouter + " (weight: " + weight + ")");
+            }
+        }
+    }
 }

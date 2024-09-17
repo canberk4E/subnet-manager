@@ -56,6 +56,7 @@ public class NetworkManager {
                 break;
         }
     }
+
     /**
      * Handles the 'load' command to load a network from a file.
      *
@@ -241,7 +242,6 @@ public class NetworkManager {
         if (sn != null) {
             NetworkSystem computer = new NetworkSystem(ipAddress, false);
             sn.addNetworkSystem(computer);
-
         } else {
             System.out.println("Error, Subnet not found.");
         }
