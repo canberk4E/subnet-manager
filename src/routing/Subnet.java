@@ -30,6 +30,7 @@ public class Subnet {
     public Subnet(String baseAddress, int netmask) {
         this.baseAddress = baseAddress;
         this.netmask = netmask;
+
     }
 
     /**
@@ -64,9 +65,11 @@ public class Subnet {
      */
     public void addNetworkSystem(NetworkSystem networkSystem) {
         networkSystems.add(networkSystem);
+        if (networkSystem.isRouter()) {
+            this.routerIp = networkSystem.ip();
+        }
         connections.put(networkSystem.ip(), new HashMap<>()); // Initialize empty connections for each system
     }
-
     /**
      * Returns the list of network systems within the subnet.
      * @return a list of network systems
@@ -107,14 +110,22 @@ public class Subnet {
         connections.computeIfAbsent(system2, k -> new HashMap<>()).put(system1, weight);
     }
     /**
-     * Removes a connection between two systems within the subnet.
+     * Checks if a connection exists between two systems in the subnet.
+     * @param system1 the IP address of the first system
+     * @param system2 the IP address of the second system
+     * @return true if a connection exists, false otherwise
+     */
+    public boolean hasConnection(String system1, String system2) {
+        return connections.containsKey(system1) && connections.get(system1).containsKey(system2);
+    }
+
+    /**
+     * Removes a connection between two systems in the subnet.
      * @param system1 the IP address of the first system
      * @param system2 the IP address of the second system
      */
     public void removeConnection(String system1, String system2) {
-        // Check if both systems exist in the connections map
-        if (connections.containsKey(system1) && connections.get(system1).containsKey(system2)) {
-            // Remove the connection
+        if (hasConnection(system1, system2)) {
             connections.get(system1).remove(system2);
             connections.get(system2).remove(system1);
 
@@ -125,11 +136,7 @@ public class Subnet {
             if (connections.get(system2).isEmpty()) {
                 connections.remove(system2);
             }
-
-        } else {
-            System.out.println("Error, No connection exists between " + system1 + " and " + system2 + ".");
         }
-
     }
     /**
      * Removes a computer from the subnet.
@@ -161,7 +168,22 @@ public class Subnet {
         return true;
     }
 
+    /**
+     * getter for networkSystem.
+     * @return the networksystem.
+     */
+    public List<NetworkSystem> getAllNetworkSystems() {
+        return networkSystems;
+    }
 
+    /**
+     * getter for connections.
+     * @param ip searched ip.
+     * @return getIp.
+     */
+    public Map<String, Integer> getConnections(String ip) {
+        return connections.get(ip);
+    }
 
     /**
      * Gets the last possible IP address in the subnet (broadcast address).
@@ -193,12 +215,14 @@ public class Subnet {
      */
     public boolean containsIp(String ip) {
         // Validate IP address format using the CIDR class
-        if (!CIDR.isValidIp(ip) || !CIDR.isValidIp(baseAddress)) {
+        if (!CIDR.isValidIp(ip)) {
+            // Only print error once and return false immediately
+            if (!CIDR.isValidIp(baseAddress)) {
+                System.out.println("Error, Invalid base IP address format.");
+            }
             System.out.println("Error, Invalid IP address format.");
             return false;
         }
-
-        // Convert the base address and the given IP address to byte arrays using CIDR
         byte[] baseAddressBytes = CIDR.convertIpToByteArray(baseAddress);
         byte[] ipBytes = CIDR.convertIpToByteArray(ip);
 
@@ -216,10 +240,9 @@ public class Subnet {
         int baseAddressInt = CIDR.byteArrayToInt(baseAddressBytes);
         int ipInt = CIDR.byteArrayToInt(ipBytes);
 
-        // Apply the mask to both the base address and the IP address
+        // Check if the given IP is within the subnet's range
         return (baseAddressInt & mask) == (ipInt & mask);
     }
-
 
     /**
      * Finds the shortest path between two IP addresses in the subnet.
@@ -328,3 +351,4 @@ public class Subnet {
         return baseAddress + "/" + netmask;
     }
 }
+

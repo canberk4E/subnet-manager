@@ -65,4 +65,21 @@ public final class NetworkUtility {
         }
         return true;
     }
+    /**
+     * validation for ip.
+     * @param input netmask of ip.
+     * @return boolean value.
+     */
+    public static boolean isIpNetMaskValid(String input) {
+        return !input.equals("8") && !input.equals("16") && !input.equals("24");
+    }
+    /**
+     * Handles the case of invalid connection format.
+     * @return empty string.
+     */
+    public static String handleInvalidConnectionFormat() {
+        System.out.println("Error, Invalid connection format with weight.");
+        return "";
+    }
 }
+

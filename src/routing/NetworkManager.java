@@ -92,7 +92,7 @@ public class NetworkManager {
                 }
             }
             case "systems" -> {
-                if (parts.length < 3) {
+                if (parts.length != 3) {
                     System.out.println("Error, Missing subnet argument for 'list systems'. Expected 'list systems <subnet>'.");
                 } else {
                     listSystems(parts[2]);
@@ -106,7 +106,8 @@ public class NetworkManager {
      * @param parts array of command arguments.
      */
     private void handleAddCommand(String[] parts) {
-        if (parts.length < 4 || (!parts[1].equals("computer") && !parts[1].equals("connection")) || parts[2].equals(parts[3])) {
+        if (parts.length < 4 || !parts[1].equals("computer") && !parts[1].equals("connection") || parts[2].equals(parts[3])
+                || subnets.isEmpty()) {
             System.out.println("Error, Invalid 'add' command format.");
             return;
         }
@@ -150,7 +151,7 @@ public class NetworkManager {
      * @param parts array of command arguments.
      */
     private void handleRemoveCommand(String[] parts) {
-        if (parts.length != 4) {
+        if (parts.length != 4 || subnets.isEmpty()) {
             System.out.println("Error, Invalid remove command format.");
             return;
         }
@@ -167,8 +168,6 @@ public class NetworkManager {
             System.out.println("Error, Invalid remove command. Expected 'connection' or 'computer'.");
         }
     }
-
-
     private void listSubnets() {
         if (subnets.isEmpty()) {
             System.out.println("Error, No subnets found.");
@@ -182,16 +181,15 @@ public class NetworkManager {
             System.out.println(result.toString().trim());
         }
     }
-
     /**
-     * Lists the range of a specific subnet.
+     * Lists the range of a specific, subnet.
      * @param subnet the subnet in CIDR notation.
      */
     private void listRange(String subnet) throws IllegalArgumentException {
         String[] parts = subnet.split("/");
         String firstIp = parts[0];
         Subnet sn = subnets.get(firstIp);
-        if (sn == null) {
+        if (sn == null || !subnet.contains("/")) {
             System.out.println("Error, Subnet not found.");
             return;
         }
@@ -209,6 +207,10 @@ public class NetworkManager {
             System.out.println("Error, Subnet not found.");
             return;
         }
+        if (CIDR.isValidIp(subnet) || NetworkUtility.isIpNetMaskValid(parts[1])) {
+            System.out.println("Error, Subnet not found.");
+            return;
+        }
         StringBuilder result = new StringBuilder();
         for (NetworkSystem networkSystem : sn.getNetworkSystems()) {
             result.append(networkSystem.ip()).append(" ");
@@ -222,13 +224,19 @@ public class NetworkManager {
      */
     private void addComputer(String subnetAddress, String ipAddress) {
         Subnet sn = subnets.get(subnetAddress);
+        if (deviceNameToIpMap.containsValue(ipAddress)) {
+            System.out.println("Error, Computer with IP " + ipAddress + " already exists in the system.");
+            return;
+        }
         if (sn != null) {
             NetworkSystem computer = new NetworkSystem(ipAddress, false);
             sn.addNetworkSystem(computer);
+            deviceNameToIpMap.put("Computer_" + ipAddress, ipAddress); // Add with a unique key
         } else {
             System.out.println("Error, Subnet not found.");
         }
     }
+
     /**
      * Removes a computer from the subnet.
      * @param subnetAddress the subnet address from which the computer will be removed
@@ -257,7 +265,6 @@ public class NetworkManager {
      * @throws IOException if there's an issue reading the file.
      */
     public void loadNetwork(String path) throws IOException {
-        // Clear the existing network data before loading a new network
         subnets.clear();
         deviceNameToIpMap.clear();
         interSubnetConnections.clear();
@@ -327,11 +334,9 @@ public class NetworkManager {
                 String system1 = parts[0].trim();
                 String rest = parts[1].trim();
                 String ip1 = deviceNameToIpMap.get(system1);
-
                 if (ip1 == null) {
                     return NetworkUtility.handleMissingDevice(system1);
                 }
-
                 if (rest.contains("|")) {
                     return handleIntraSubnetConnection(system1, ip1, rest, connectionBuilder);
                 } else {
@@ -348,7 +353,7 @@ public class NetworkManager {
     private String handleIntraSubnetConnection(String system1, String ip1, String rest, StringBuilder connectionBuilder) {
         String[] weightParts = rest.split("\\|");
         if (weightParts.length != 3) {
-            return handleInvalidConnectionFormat();
+            return NetworkUtility.handleInvalidConnectionFormat();
         }
 
         String system2 = weightParts[2].trim();
@@ -389,12 +394,5 @@ public class NetworkManager {
             connectionManager.addConnection(ip1, ip2, 0);
         }
         return connectionBuilder.toString();
-    }
-    /**
-     * Handles the case of invalid connection format.
-     */
-    private String handleInvalidConnectionFormat() {
-        System.out.println("Error, Invalid connection format with weight.");
-        return "";
     }
 }

@@ -11,7 +11,6 @@ public final class Main {
     private Main() {
 
     }
-
     /**
      * for app starting.
      * @param args yes.
@@ -39,3 +38,4 @@ public final class Main {
         scanner.close();
     }
 }
+
