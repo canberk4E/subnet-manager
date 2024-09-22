@@ -83,5 +83,26 @@ public final class CIDR {
 
         return true;
     }
+    /**
+     * Checks if the given IP address belongs to a subnet defined by CIDR notation.
+     *
+     * @param ipAddress the IP address to check
+     * @param cidr      the CIDR notation (e.g., "192.168.1.0/24")
+     * @return true if the IP address belongs to the subnet, false otherwise
+     */
+    public static boolean belongsToSubnet(String ipAddress, String cidr) {
+        String[] parts = cidr.split("/");
+        String subnetIp = parts[0];
+        int prefixLength = Integer.parseInt(parts[1]);
+
+        byte[] ipBytes = convertIpToByteArray(ipAddress);
+        byte[] subnetBytes = convertIpToByteArray(subnetIp);
+
+        int ipInt = byteArrayToInt(ipBytes);
+        int subnetInt = byteArrayToInt(subnetBytes);
+
+        int mask = -1 << (32 - prefixLength);
+        return (ipInt & mask) == (subnetInt & mask);
+    }
 }
 

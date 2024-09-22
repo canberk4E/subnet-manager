@@ -12,16 +12,19 @@ import java.util.Map;
  * @author uylsn
  */
 public class NetworkManager {
-    private final Map<String, Subnet> subnets = new HashMap<>();
-    private final Map<String, String> deviceNameToIpMap = new HashMap<>();
+    final Map<String, Subnet> subnets = new HashMap<>();
+    final ConnectionManager connectionManager;
+    final Map<String, String> deviceNameToIpMap = new HashMap<>();
     private final Map<String, Map<String, Integer>> interSubnetConnections = new HashMap<>();
-    private final ConnectionManager connectionManager;
+    private final CommandHandler commandHandler;
+
     /**
      * Constructor for NetworkManager.
      * Initializes the connection manager and network data structures.
      */
     public NetworkManager() {
-        this.connectionManager = new ConnectionManager(subnets, interSubnetConnections);
+        this.connectionManager = new ConnectionManager(subnets, interSubnetConnections, deviceNameToIpMap); // Pass deviceNameToIpMap
+        this.commandHandler = new CommandHandler(this);
     }
     /**
      * Processes user commands and executes the appropriate actions.
@@ -30,145 +33,12 @@ public class NetworkManager {
      * @throws InterruptedException if there's an issue with process interruptions.
      */
     public void processCommand(String command) throws IOException, InterruptedException {
-        String[] parts = command.split("\\s+");
-        if (parts.length == 0 || parts[0].isEmpty()) {
-            return;
-        }
-        switch (parts[0]) {
-            case "load":
-                handleLoadCommand(parts);
-                break;
-            case "list":
-                handleListCommand(parts);
-                break;
-            case "add":
-                handleAddCommand(parts);
-                break;
-            case "send":
-                handleSendCommand(parts);
-                break;
-            case "remove":
-                handleRemoveCommand(parts);
-                break;
-            default:
-                System.out.println("Error, Unknown command '" + parts[0] + "'. Please try again.");
-                break;
-        }
+        commandHandler.processCommand(command);
     }
     /**
      * Handles the 'load' command to load a network from a file.
-     * @param parts array of command arguments.
-     * @throws IOException if there's an issue reading the file.
      */
-    private void handleLoadCommand(String[] parts) throws IOException {
-        if (parts.length != 3 || !parts[1].equals("network")) {
-            System.out.println("Error, Invalid 'load' command format. Expected 'load network <file_path>'.");
-        } else {
-            loadNetwork(parts[2]);
-        }
-    }
-    /**
-     * Handles the 'list' command to list network information.
-     * @param parts array of command arguments.
-     */
-    private void handleListCommand(String[] parts) {
-        if (parts.length < 2) {
-            System.out.println("Error, Missing argument for 'list' command.");
-            return;
-        }
-        switch (parts[1]) {
-            case "subnets" -> {
-                if (parts.length == 2) {
-                    listSubnets();
-                } else {
-                    System.out.println("Error, wrong format for list subnets.");
-                }
-            }
-            case "range" -> {
-                if (parts.length < 3) {
-                    System.out.println("Error, Missing subnet argument for 'list range'. Expected 'list range <subnet>'.");
-                } else {
-                    listRange(parts[2]);
-                }
-            }
-            case "systems" -> {
-                if (parts.length != 3) {
-                    System.out.println("Error, Missing subnet argument for 'list systems'. Expected 'list systems <subnet>'.");
-                } else {
-                    listSystems(parts[2]);
-                }
-            }
-            default -> System.out.println("Error, Invalid 'list' command. Expected 'subnets', 'range', or 'systems'.");
-        }
-    }
-    /**
-     * Handles the 'add' command to add a computer or connection to the network.
-     * @param parts array of command arguments.
-     */
-    private void handleAddCommand(String[] parts) {
-        if (parts.length < 4 || !parts[1].equals("computer") && !parts[1].equals("connection") || parts[2].equals(parts[3])
-                || subnets.isEmpty()) {
-            System.out.println("Error, Invalid 'add' command format.");
-            return;
-        }
-        if (parts[1].equals("computer")) {
-            String subnetAddress = parts[2].split("/")[0];
-            addComputer(subnetAddress, parts[3]);
-        } else {
-            if (!CIDR.isValidIp(parts[2]) || !CIDR.isValidIp(parts[3])) {
-                System.out.println("Error, Invalid IP address format.");
-                return;
-            }
-            NetworkSystem system1 = connectionManager.findSystemByIp(parts[2]);
-            NetworkSystem system2 = connectionManager.findSystemByIp(parts[3]);
-            if (system1 != null && system2 != null && system1.isRouter() && system2.isRouter()) {
-                connectionManager.addConnection(parts[2], parts[3], 0);
-            } else if (parts.length == 5) {
-                try {
-                    int weight = Integer.parseInt(parts[4]);
-                    connectionManager.addConnection(parts[2], parts[3], weight);
-                } catch (NumberFormatException e) {
-                    System.out.println("Error, Invalid weight format.");
-                }
-            } else {
-                System.out.println("Error, Invalid 'add connection' command format. Expected 'add connection <ip1> <ip2> <weight>'.");
-            }
-        }
-    }
-    /**
-     * Handles the 'send' command to send a packet between systems.
-     * @param parts array of command arguments.
-     */
-    private void handleSendCommand(String[] parts) {
-        if (!parts[1].equals("packet") || parts.length != 4)  {
-            System.out.println("Error, Invalid 'send packet' command format. Expected 'send packet <from_ip> <to_ip>'.");
-        } else {
-            connectionManager.sendPacket(parts[2], parts[3]);
-        }
-    }
-    /**
-     * Handles the 'remove' command to remove a computer or connection.
-     * @param parts array of command arguments.
-     */
-    private void handleRemoveCommand(String[] parts) {
-        if (parts.length != 4 || subnets.isEmpty()) {
-            System.out.println("Error, Invalid remove command format.");
-            return;
-        }
-        if (parts[1].equals("connection")) {
-            connectionManager.removeConnection(parts[2], parts[3]);
-        } else if (parts[1].equals("computer")) {
-            // If "computer" is the second part, handle removing a computer
-            String subnetAddress = parts[2].split("/")[0];
-            boolean removed = removeComputer(subnetAddress, parts[3]);
-            if (!removed) {
-                System.out.println("Error, System " + parts[3] + " not found in the subnet.");
-            }
-        } else {
-            System.out.println("Error, Invalid remove command. Expected 'connection' or 'computer'.");
-        }
-    }
-    private void listSubnets() {
+    public void listSubnets() {
         if (subnets.isEmpty()) {
             System.out.println("Error, No subnets found.");
         } else {
@@ -184,8 +54,9 @@ public class NetworkManager {
     /**
      * Lists the range of a specific, subnet.
      * @param subnet the subnet in CIDR notation.
+     * @throws IllegalArgumentException
      */
-    private void listRange(String subnet) throws IllegalArgumentException {
+    void listRange(String subnet) throws IllegalArgumentException {
         String[] parts = subnet.split("/");
         String firstIp = parts[0];
         Subnet sn = subnets.get(firstIp);
@@ -199,7 +70,7 @@ public class NetworkManager {
      * Lists all systems in a specific subnet.
      * @param subnet the subnet in CIDR notation.
      */
-    private void listSystems(String subnet) {
+    void listSystems(String subnet) {
         String[] parts = subnet.split("/");
         String base = parts[0];
         Subnet sn = subnets.get(base);
@@ -222,7 +93,7 @@ public class NetworkManager {
      * @param subnetAddress the subnet address to which the computer will be added.
      * @param ipAddress     the IP address of the computer to be added.
      */
-    private void addComputer(String subnetAddress, String ipAddress) {
+    void addComputer(String subnetAddress, String ipAddress) {
         Subnet sn = subnets.get(subnetAddress);
         if (deviceNameToIpMap.containsValue(ipAddress)) {
             System.out.println("Error, Computer with IP " + ipAddress + " already exists in the system.");
@@ -243,7 +114,7 @@ public class NetworkManager {
      * @param ip the IP address of the computer to remove
      * @return true if the computer was removed, false if the system is a router or not found
      */
-    private boolean removeComputer(String subnetAddress, String ip) {
+    boolean removeComputer(String subnetAddress, String ip) {
         Subnet targetSubnet = subnets.get(subnetAddress);
         if (targetSubnet == null) {
             return false;
@@ -320,6 +191,7 @@ public class NetworkManager {
             }
         }
     }
+
     /**
      * Processes the connection line and returns the connection string.
      * @param line         the connection line.
@@ -355,7 +227,6 @@ public class NetworkManager {
         if (weightParts.length != 3) {
             return NetworkUtility.handleInvalidConnectionFormat();
         }
-
         String system2 = weightParts[2].trim();
         String ip2 = deviceNameToIpMap.get(system2);
 

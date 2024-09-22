@@ -16,32 +16,38 @@ import java.util.LinkedList;
  * @author uylsn
  */
 public class ConnectionManager {
-
     private final Map<String, Subnet> subnets;
     private final Map<String, Map<String, Integer>> interSubnetConnections;
     private final Map<String, Set<String>> directInterSubnetConnections;
-
+    private final Map<String, Integer> hopCounts = new HashMap<>();
+    private final Map<String, Integer> distances = new HashMap<>();
+    private final Map<String, String> deviceNameToIpMap;
     /**
      * Constructor to initialize the ConnectionManager.
-     *
      * @param subnets                Map of subnets by their base address.
-     * @param interSubnetConnections  Map containing the connections between different subnets (routers).
+     * @param interSubnetConnections Map containing the connections between different subnets (routers).
+     * @param deviceNameToIpMap saves the name of the device and its IP.
      */
-    public ConnectionManager(Map<String, Subnet> subnets, Map<String, Map<String, Integer>> interSubnetConnections) {
+    public ConnectionManager(Map<String, Subnet> subnets, Map<String, Map<String,
+            Integer>> interSubnetConnections, Map<String, String> deviceNameToIpMap) {
         this.subnets = subnets;
         this.interSubnetConnections = interSubnetConnections;
         this.directInterSubnetConnections = new HashMap<>();
+        this.deviceNameToIpMap = deviceNameToIpMap; // Initialize deviceNameToIpMap
     }
-
     /**
      * Adds a connection between two systems. If they are in the same subnet, a weighted connection is created.
      * If they are in different subnets, a connection between routers is created.
-     *
      * @param ip1    The IP address of the first system.
      * @param ip2    The IP address of the second system.
      * @param weight The weight of the connection, applicable only for intra-subnet connections.
      */
     public void addConnection(String ip1, String ip2, int weight) {
+        if (!deviceNameToIpMap.containsValue(ip1) || !deviceNameToIpMap.containsValue(ip2)) {
+            System.out.println("Error, One or both IP addresses do not exist in the loaded network.");
+            return;
+        }
+
         Subnet subnet1 = findSubnetForIp(ip1);
         Subnet subnet2 = findSubnetForIp(ip2);
 
@@ -74,10 +80,7 @@ public class ConnectionManager {
     public void removeConnection(String ip1, String ip2) {
         Subnet subnet1 = findSubnetForIp(ip1);
         Subnet subnet2 = findSubnetForIp(ip2);
-
-        // Case 1: Both systems are in the same subnet
         if (subnet1 != null && subnet1.equals(subnet2)) {
-            // Check if there is an actual connection to remove
             if (subnet1.hasConnection(ip1, ip2)) {
                 subnet1.removeConnection(ip1, ip2);
             } else {
@@ -85,9 +88,7 @@ public class ConnectionManager {
             }
             return;
         }
-        // Case 2: Systems are in different subnets
         if (subnet1 != null && subnet2 != null) {
-            // Check if there's a direct inter-subnet connection
             if (directInterSubnetConnections.containsKey(ip1) && directInterSubnetConnections.get(ip1).contains(ip2)) {
                 directInterSubnetConnections.get(ip1).remove(ip2);
                 if (directInterSubnetConnections.get(ip1).isEmpty()) {
@@ -212,6 +213,7 @@ public class ConnectionManager {
 
         List<NetworkSystem> networkSystems = subnet.getAllNetworkSystems();
 
+        // Initialize distances to "infinity" (maximum value)
         for (NetworkSystem system : networkSystems) {
             distances.put(system.ip(), Integer.MAX_VALUE);
         }
@@ -244,6 +246,7 @@ public class ConnectionManager {
             }
         }
 
+        // Reconstruct the path
         List<String> path = new LinkedList<>();
         for (String at = toIp; at != null; at = previousNodes.get(at)) {
             path.add(0, at);
@@ -254,52 +257,49 @@ public class ConnectionManager {
 
     /**
      * Finds the shortest inter-subnet path between two routers using Dijkstra's algorithm.
-     *
      * @param fromRouterIp The IP address of the source router.
      * @param toRouterIp   The IP address of the destination router.
      * @return The list of router IP addresses representing the shortest path.
      */
     private List<String> findShortestInterSubnetPath(String fromRouterIp, String toRouterIp) {
-        Map<String, Integer> distances = new HashMap<>();
         Map<String, String> previousNodes = new HashMap<>();
-        PriorityQueue<String> pq = new PriorityQueue<>(new Comparator<String>() {
-            @Override
-            public int compare(String ip1, String ip2) {
-                int distanceComparison = Integer.compare(distances.get(ip1), distances.get(ip2));
+        Map<String, Integer> hopCounts = new HashMap<>();
+        Map<String, Integer> distances = new HashMap<>();
 
-                // If the distances are equal, prioritize alphabetically smaller router IP
-                if (distanceComparison == 0) {
-                    return ip1.compareTo(ip2);  // Alphabetical comparison
-                }
+        // Priority queue prioritizes fewer hops, then lexicographically smaller first-hop IP if hops are equal
+        // Fewer hops first
+        // Lexicographical IP comparison for tie-breaking
+        PriorityQueue<String> pq = new PriorityQueue<>(Comparator.comparingInt((String ip) ->
+                hopCounts.get(ip)).thenComparing(ip -> ip));
 
-                return distanceComparison;
-            }
-        });
         Set<String> visited = new HashSet<>();
 
-        // Initialize distances
+        // Initialize distances and hop counts
         for (String routerIp : directInterSubnetConnections.keySet()) {
             distances.put(routerIp, Integer.MAX_VALUE);
+            hopCounts.put(routerIp, Integer.MAX_VALUE);
         }
-        distances.put(fromRouterIp, 0);  // Start from the source router
+        distances.put(fromRouterIp, 0);
+        hopCounts.put(fromRouterIp, 0);
         pq.add(fromRouterIp);
-
         while (!pq.isEmpty()) {
             String current = pq.poll();
             visited.add(current);
-
             if (current.equals(toRouterIp)) {
                 break;  // Reached the destination
             }
-
             Set<String> neighbors = directInterSubnetConnections.get(current);
             if (neighbors != null) {
                 for (String neighbor : neighbors) {
                     if (!visited.contains(neighbor)) {
-                        int weight = getWeight(current, neighbor);  // Retrieve actual weight
+                        int weight = getWeight(current, neighbor);
                         int newDist = distances.get(current) + weight;
-                        if (newDist < distances.get(neighbor)) {
+                        int newHopCount = hopCounts.get(current) + 1;
+                        if (newHopCount < hopCounts.get(neighbor)
+                                || (newHopCount == hopCounts.get(neighbor)
+                                        && current.compareTo(previousNodes.getOrDefault(neighbor, "")) < 0)) {
                             distances.put(neighbor, newDist);
+                            hopCounts.put(neighbor, newHopCount);
                             previousNodes.put(neighbor, current);
                             pq.add(neighbor);
                         }
@@ -307,20 +307,35 @@ public class ConnectionManager {
                 }
             }
         }
-
-        // Reconstruct the shortest path
         List<String> path = new LinkedList<>();
         for (String at = toRouterIp; at != null; at = previousNodes.get(at)) {
             path.add(0, at);
         }
-
-        return path.size() == 1 ? null : path;  // Return null if no path found
+        return path.size() == 1 ? null : path;
     }
+
+
+
+
+    /**
+     * Compares two routers based on hop counts, distances, and lexicographical order.
+     */
+    private int compareRouters(String ip1, String ip2) {
+        int hopComparison = Integer.compare(hopCounts.get(ip1), hopCounts.get(ip2));
+        if (hopComparison != 0) {
+            return hopComparison; // Prioritize fewer hops
+        }
+        int distanceComparison = Integer.compare(distances.get(ip1), distances.get(ip2));
+        if (distanceComparison != 0) {
+            return distanceComparison; // Then prioritize shorter distances
+        }
+        return ip1.compareTo(ip2); // Lexicographical comparison as tie-breaker
+    }
+
 
 
     /**
      * Retrieves the weight of the connection between two routers.
-     *
      * @param fromRouterIp The IP address of the source router.
      * @param toRouterIp   The IP address of the destination router.
      * @return The weight of the connection, or Integer.MAX_VALUE if no connection exists.
@@ -380,4 +395,5 @@ public class ConnectionManager {
         return null;
     }
 }
+
 
