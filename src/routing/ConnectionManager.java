@@ -176,21 +176,13 @@ public class ConnectionManager {
                 System.out.println("Error, No path found from the router to the receiver in the destination subnet.");
                 return;
             }
-
-            // Concatenate the three parts of the path and print the result
             pathToRouter.addAll(routerToRouterPath);
             pathToRouter.addAll(pathToReceiver);
             printPath(pathToRouter);
         }
     }
-
-
-
-
-
     /**
      * Finds the shortest path between two systems within the same subnet using Dijkstra's algorithm.
-     *
      * @param fromIp The IP address of the source system.
      * @param toIp   The IP address of the destination system.
      * @return The list of IP addresses representing the shortest path.
@@ -200,7 +192,6 @@ public class ConnectionManager {
         if (subnet == null) {
             return null;
         }
-
         Map<String, Integer> distances = new HashMap<>();
         Map<String, String> previousNodes = new HashMap<>();
         PriorityQueue<String> pq = new PriorityQueue<>(new Comparator<String>() {
@@ -210,16 +201,12 @@ public class ConnectionManager {
             }
         });
         Set<String> visited = new HashSet<>();
-
         List<NetworkSystem> networkSystems = subnet.getAllNetworkSystems();
-
-        // Initialize distances to "infinity" (maximum value)
         for (NetworkSystem system : networkSystems) {
             distances.put(system.ip(), Integer.MAX_VALUE);
         }
         distances.put(fromIp, 0);
         pq.add(fromIp);
-
         while (!pq.isEmpty()) {
             String current = pq.poll();
             visited.add(current);
@@ -227,7 +214,6 @@ public class ConnectionManager {
             if (current.equals(toIp)) {
                 break;
             }
-
             Map<String, Integer> neighbors = subnet.getConnections(current);
             if (neighbors != null) {
                 for (Map.Entry<String, Integer> neighbor : neighbors.entrySet()) {
@@ -245,16 +231,12 @@ public class ConnectionManager {
                 }
             }
         }
-
-        // Reconstruct the path
         List<String> path = new LinkedList<>();
         for (String at = toIp; at != null; at = previousNodes.get(at)) {
             path.add(0, at);
         }
-
         return path.size() == 1 ? null : path;
     }
-
     /**
      * Finds the shortest inter-subnet path between two routers using Dijkstra's algorithm.
      * @param fromRouterIp The IP address of the source router.
@@ -262,28 +244,15 @@ public class ConnectionManager {
      * @return The list of router IP addresses representing the shortest path.
      */
     private List<String> findShortestInterSubnetPath(String fromRouterIp, String toRouterIp) {
-        Map<String, String> previousNodes = new HashMap<>();
-        Map<String, Integer> hopCounts = new HashMap<>();
-        Map<String, Integer> distances = new HashMap<>();
-
-        // Priority queue prioritizes fewer hops, then lexicographically smaller first-hop IP if hops are equal
-        // Fewer hops first
-        // Lexicographical IP comparison for tie-breaking
-        PriorityQueue<String> pq = new PriorityQueue<>(Comparator.comparingInt((String ip) ->
-                hopCounts.get(ip)).thenComparing(ip -> ip));
-
+        RoutingState state = new RoutingState();
+        initializeRoutingData(fromRouterIp, state);
+        state.pq.add(fromRouterIp);
         Set<String> visited = new HashSet<>();
-
-        // Initialize distances and hop counts
-        for (String routerIp : directInterSubnetConnections.keySet()) {
-            distances.put(routerIp, Integer.MAX_VALUE);
-            hopCounts.put(routerIp, Integer.MAX_VALUE);
-        }
-        distances.put(fromRouterIp, 0);
-        hopCounts.put(fromRouterIp, 0);
-        pq.add(fromRouterIp);
-        while (!pq.isEmpty()) {
-            String current = pq.poll();
+        while (!state.pq.isEmpty()) {
+            String current = state.pq.poll();
+            if (visited.contains(current)) {
+                continue;
+            }
             visited.add(current);
             if (current.equals(toRouterIp)) {
                 break;  // Reached the destination
@@ -291,67 +260,97 @@ public class ConnectionManager {
             Set<String> neighbors = directInterSubnetConnections.get(current);
             if (neighbors != null) {
                 for (String neighbor : neighbors) {
-                    if (!visited.contains(neighbor)) {
-                        int weight = getWeight(current, neighbor);
-                        int newDist = distances.get(current) + weight;
-                        int newHopCount = hopCounts.get(current) + 1;
-                        if (newHopCount < hopCounts.get(neighbor)
-                                || (newHopCount == hopCounts.get(neighbor)
-                                        && current.compareTo(previousNodes.getOrDefault(neighbor, "")) < 0)) {
-                            distances.put(neighbor, newDist);
-                            hopCounts.put(neighbor, newHopCount);
-                            previousNodes.put(neighbor, current);
-                            pq.add(neighbor);
-                        }
-                    }
+                    processNeighbor(current, neighbor, fromRouterIp, state, visited);
                 }
             }
         }
+        return reconstructPath(toRouterIp, state.previousNodes);
+    }
+    private void initializeRoutingData(String fromRouterIp, RoutingState state) {
+        for (String routerIp : directInterSubnetConnections.keySet()) {
+            state.hopCounts.put(routerIp, Integer.MAX_VALUE);
+            state.firstHops.put(routerIp, "");
+            state.secondHops.put(routerIp, "");
+        }
+        state.hopCounts.put(fromRouterIp, 0);
+        state.firstHops.put(fromRouterIp, fromRouterIp);
+    }
+    private void processNeighbor(String current, String neighbor, String fromRouterIp,
+                                 RoutingState state, Set<String> visited) {
+        int newHopCount = state.hopCounts.get(current) + 1;
+
+        String neighborFirstHop = determineFirstHop(current, neighbor, fromRouterIp, state);
+        String neighborSecondHop = determineSecondHop(current, neighbor, fromRouterIp, state);
+
+        if (shouldUpdate(neighbor, newHopCount, neighborFirstHop, neighborSecondHop, state)) {
+            updateRoutingInfo(neighbor, current, newHopCount, neighborFirstHop, neighborSecondHop, state);
+        }
+    }
+    private String determineFirstHop(String current, String neighbor, String fromRouterIp,
+                                     RoutingState state) {
+        if (current.equals(fromRouterIp)) {
+            return neighbor;
+        } else {
+            return state.firstHops.get(current);
+        }
+    }
+    private String determineSecondHop(String current, String neighbor, String fromRouterIp,
+                                      RoutingState state) {
+        if (current.equals(fromRouterIp)) {
+            return "";
+        } else if (state.firstHops.get(current).equals(current)) {
+            return neighbor;
+        } else {
+            return state.secondHops.get(current);
+        }
+    }
+    private boolean shouldUpdate(String neighbor, int newHopCount, String neighborFirstHop,
+                                 String neighborSecondHop, RoutingState state) {
+        int existingHopCount = state.hopCounts.get(neighbor);
+        if (newHopCount < existingHopCount) {
+            return true;
+        }
+        if (newHopCount > existingHopCount) {
+            return false;
+        }
+        int firstHopComparison = neighborFirstHop.compareTo(state.firstHops.get(neighbor));
+        if (firstHopComparison < 0) {
+            return true;
+        }
+        if (firstHopComparison > 0) {
+            return false;
+        }
+        int secondHopComparison = neighborSecondHop.compareTo(state.secondHops.getOrDefault(neighbor, ""));
+        if (secondHopComparison < 0) {
+            return true;
+        }
+        if (secondHopComparison > 0) {
+            return false;
+        }
+        String existingPrevNode = state.previousNodes.get(neighbor);
+        if (existingPrevNode == null) {
+            return true;
+        }
+        return neighbor.compareTo(existingPrevNode) < 0;
+    }
+    private void updateRoutingInfo(String neighbor, String current, int newHopCount,
+                                   String neighborFirstHop, String neighborSecondHop,
+                                   RoutingState state) {
+        state.hopCounts.put(neighbor, newHopCount);
+        state.previousNodes.put(neighbor, current);
+        state.firstHops.put(neighbor, neighborFirstHop);
+        state.secondHops.put(neighbor, neighborSecondHop);
+        state.pq.add(neighbor);
+    }
+    private List<String> reconstructPath(String toRouterIp, Map<String, String> previousNodes) {
         List<String> path = new LinkedList<>();
         for (String at = toRouterIp; at != null; at = previousNodes.get(at)) {
             path.add(0, at);
         }
         return path.size() == 1 ? null : path;
     }
-
-
-
-
-    /**
-     * Compares two routers based on hop counts, distances, and lexicographical order.
-     */
-    private int compareRouters(String ip1, String ip2) {
-        int hopComparison = Integer.compare(hopCounts.get(ip1), hopCounts.get(ip2));
-        if (hopComparison != 0) {
-            return hopComparison; // Prioritize fewer hops
-        }
-        int distanceComparison = Integer.compare(distances.get(ip1), distances.get(ip2));
-        if (distanceComparison != 0) {
-            return distanceComparison; // Then prioritize shorter distances
-        }
-        return ip1.compareTo(ip2); // Lexicographical comparison as tie-breaker
-    }
-
-
-
-    /**
-     * Retrieves the weight of the connection between two routers.
-     * @param fromRouterIp The IP address of the source router.
-     * @param toRouterIp   The IP address of the destination router.
-     * @return The weight of the connection, or Integer.MAX_VALUE if no connection exists.
-     */
-    private int getWeight(String fromRouterIp, String toRouterIp) {
-        Map<String, Integer> connectionsFrom = interSubnetConnections.get(fromRouterIp);
-        if (connectionsFrom != null && connectionsFrom.containsKey(toRouterIp)) {
-            return connectionsFrom.get(toRouterIp);
-        }
-
-        return Integer.MAX_VALUE;
-    }
-
     /**
      * Prints the path of the packet, ensuring there are no duplicate consecutive IPs.
-     *
      * @param path The list of IP addresses representing the path.
      */
     private void printPath(List<String> path) {
@@ -361,12 +360,10 @@ public class ConnectionManager {
                 distinctPath.add(path.get(i));
             }
         }
-
         System.out.println(String.join(" ", distinctPath));
     }
     /**
      * Finds the subnet that contains the given IP address.
-     *
      * @param ip The IP address to search for.
      * @return The Subnet containing the IP address, or null if not found.
      */
@@ -381,7 +378,6 @@ public class ConnectionManager {
     }
     /**
      * Finds a network system by its IP address.
-     *
      * @param ip The IP address of the system.
      * @return The NetworkSystem with the given IP address, or null if not found.
      */
